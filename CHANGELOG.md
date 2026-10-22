@@ -4,6 +4,8 @@
 
 - Exclude rebuildable native/plugin caches and operational logs from private
   snapshots while retaining WAL-backed conversation state and source changes.
+- Omit native runtime helper links so recovery archives can be safely extracted
+  with the standard data filter into an independent directory.
 - Verify new bot readiness against its connected process before accepting updates.
 - Retain follow-up input when an active turn completes just before native steering.
 - Keep partial image downloads out of retry reuse.

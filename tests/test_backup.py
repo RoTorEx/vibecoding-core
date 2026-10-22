@@ -57,11 +57,20 @@ async def test_native_snapshot_keeps_live_state_and_sources_without_caches(host,
     codex_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     retained = ["auth.json", "sessions/rollout.jsonl", "plugins/config.json"]
-    omitted = ["cache/catalog.json", "plugins/cache/template.bin", "log/runtime.log", ".tmp/socket"]
+    omitted = [
+        "cache/catalog.json",
+        "plugins/cache/template.bin",
+        "log/runtime.log",
+        ".tmp/socket",
+        "tmp/arg0-linux/apply_patch",
+    ]
     for name in retained + omitted:
         path = codex_home / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("fixture: " + name)
+        if name.endswith("apply_patch"):
+            path.symlink_to("/")
+        else:
+            path.write_text("fixture: " + name)
     project = tmp_path / "source"
     (project / ".git").mkdir(parents=True)
     (project / "uncommitted.txt").write_text("unfinished user work")

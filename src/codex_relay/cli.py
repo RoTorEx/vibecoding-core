@@ -137,7 +137,7 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
 
                     def codex_filter(member):
                         relative = Path(member.name).relative_to("codex")
-                        if relative.parts and relative.parts[0] in {"cache", "log", ".tmp"}:
+                        if relative.parts and relative.parts[0] in {"cache", "log", ".tmp", "tmp"}:
                             return None
                         if relative.parts[:2] == ("plugins", "cache"):
                             return None
