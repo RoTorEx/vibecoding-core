@@ -263,3 +263,22 @@ async def test_valid_image_download_persists_once_and_keeps_permissions(app):
     assert Path(first).read_bytes() == raw
     assert Path(first).stat().st_mode & 0o077 == 0
     assert calls == ["native-image"]
+
+
+async def test_partial_image_file_is_not_reused_as_a_complete_attachment(app):
+    runtime, *_ = app
+    folder = runtime.settings.data_dir / "uploads" / "recover"
+    folder.mkdir()
+    (folder / "90.part").write_bytes(b"incomplete old download")
+    raw = b"\x89PNG\r\n\x1a\ncomplete-download"
+
+    async def download(file_id, destination):
+        destination.write(raw)
+
+    runtime.bot.download = download
+    result = await runtime.download_image(
+        {"message_id": 90, "document": {"mime_type": "image/png", "file_id": "retry"}}, "recover"
+    )
+    from pathlib import Path
+
+    assert Path(result).suffix == ".png" and Path(result).read_bytes() == raw

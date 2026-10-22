@@ -2,7 +2,7 @@
 
 ## Host prerequisites
 
-Linux with Python 3.13+, systemd, git and uv; official Codex 0.163.0 on PATH or
+Linux with Python 3.13+, systemd, git and uv; official Codex 0.163.0 and its matching codex-code-mode-host on PATH or
 configured by absolute path. Codex runs as the developer, never as root.
 The first deployment uses alex on the existing personal VPS. Full sudo is the
 owner's accepted choice. No firewall or existing application change is needed.
@@ -91,5 +91,16 @@ over a live engine or overwrite current sources. Native credentials, source
 paths and Git origins must be reconciled on a different host. A backup run is
 not proof of successful off-host recovery; record both separately.
 
-The existing backup-service integration is a separate host registration owned
-by that project. Preserve its credential store and established retention.
+The existing backup-service registration selects the relay's checked
+snapshots/latest.tar.gz and checksum. An hourly codex-relay-snapshot.timer
+attempts an immediate-idle snapshot (`--wait 0`); busy tasks are never stopped.
+Enable the timer only after the first private snapshot and off-site restore
+are verified. Old copies survive an unsuccessful refresh. Check freshness
+before departure; continuous activity can defer refreshes. Preserve the backup
+service's credential store and established retention.
+
+GitHub onboarding uses a separate developer SSH key. In the initial deployment
+an administrator cloned the private source through the existing trusted root
+transport, without copying that key. Register the new developer public key in
+RoTorEx and authenticate GitHub CLI before relying on unattended Git pushes or
+new private clones as alex. Do not weaken host-key checking to bypass setup.

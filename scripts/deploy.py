@@ -9,6 +9,7 @@ import io
 import json
 import os
 import socket
+import sqlite3
 import subprocess
 import tarfile
 import time
@@ -77,6 +78,23 @@ def activate(component: str, release: Path, root: Path, runner=run, verify=None)
                 health = api("/health")
                 if health.get("revision") != expected:
                     raise RuntimeError("Engine did not activate the staged revision")
+            else:
+                config = Path(
+                    os.environ.get("CODEX_RELAY_CONFIG", "~/.config/codex-relay/config.toml")
+                ).expanduser()
+                values = tomllib.loads(config.read_text()) if config.exists() else {}
+                database = Path(values.get("data_dir", "~/.local/state/codex-relay")).expanduser() / "bot.db"
+                for _ in range(30):
+                    pid = runner(
+                        ["systemctl", "show", unit, "-p", "MainPID", "--value"], capture_output=True
+                    ).stdout.strip()
+                    with contextlib.closing(sqlite3.connect(f"file:{database}?mode=ro", uri=True)) as db:
+                        ready = db.execute("SELECT value FROM meta WHERE key='bot_pid'").fetchone()
+                    if pid != "0" and ready and ready[0] == pid:
+                        break
+                    time.sleep(1)
+                else:
+                    raise RuntimeError("New bot process did not confirm Telegram and engine readiness")
     except BaseException:
         if previous:
             switch(link, previous)

@@ -136,3 +136,33 @@ async def test_projects_and_live_model_settings(host):
     await settle(engine)
     with pytest.raises(ValueError, match="Wait"):
         await client.call("/sessions/" + s["id"] + "/settings", {"cwd": str(project)})
+
+
+async def test_explicit_no_active_turn_rejection_starts_once_but_unknown_outcome_does_not(host):
+    from codex_relay.codex import RpcError
+
+    settings, engine, native, client = host
+    s = await new(host)
+    await client.call("/messages", {"request_id": "race-initial", "session_id": s["id"], "text": "first"})
+    await settle(engine)
+    original = native.request
+
+    async def racing_request(method, params, **kwargs):
+        if method == "turn/steer":
+            engine.on_event(
+                "turn/completed",
+                {
+                    "threadId": params["threadId"],
+                    "turn": {"id": params["expectedTurnId"], "status": "completed"},
+                },
+            )
+            raise RpcError({"code": -32600, "message": "No active turn found for thread"})
+        return await original(method, params, **kwargs)
+
+    native.request = racing_request
+    await client.call("/messages", {"request_id": "race-followup", "session_id": s["id"], "text": "second"})
+    await settle(engine)
+    starts = [p for m, p in native.calls if m == "turn/start"]
+    assert len(starts) == 2
+    assert starts[-1]["input"] == [{"type": "text", "text": "second"}]
+    assert engine.store.request("race-followup")["state"] == "accepted"

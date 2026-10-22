@@ -116,29 +116,36 @@ class Engine:
                 inputs += [{"type": "localImage", "path": x} for x in p.get("images", [])]
                 self.store.request_state(rid, "dispatching")
                 dispatched = True
+                start_params = {
+                    "threadId": s["thread_id"],
+                    "input": inputs,
+                    "clientUserMessageId": rid,
+                    "cwd": s["cwd"],
+                    "effort": s["effort"],
+                    "approvalPolicy": "never",
+                    "sandboxPolicy": {"type": "dangerFullAccess"},
+                }
+                if s["model"]:
+                    start_params["model"] = s["model"]
                 if s["turn_id"]:
-                    result = await self.client.request(
-                        "turn/steer",
-                        {
-                            "threadId": s["thread_id"],
-                            "expectedTurnId": s["turn_id"],
-                            "input": inputs,
-                            "clientUserMessageId": rid,
-                        },
-                    )
+                    try:
+                        result = await self.client.request(
+                            "turn/steer",
+                            {
+                                "threadId": s["thread_id"],
+                                "expectedTurnId": s["turn_id"],
+                                "input": inputs,
+                                "clientUserMessageId": rid,
+                            },
+                        )
+                    except RpcError as exc:
+                        # Explicit rejection is safe to turn into a new request; lost replies are not.
+                        if "no active turn" not in str(exc).lower():
+                            raise
+                        self.store.update_session(sid, turn_id=None)
+                        result = await self.client.request("turn/start", start_params)
                 else:
-                    params = {
-                        "threadId": s["thread_id"],
-                        "input": inputs,
-                        "clientUserMessageId": rid,
-                        "cwd": s["cwd"],
-                        "effort": s["effort"],
-                        "approvalPolicy": "never",
-                        "sandboxPolicy": {"type": "dangerFullAccess"},
-                    }
-                    if s["model"]:
-                        params["model"] = s["model"]
-                    result = await self.client.request("turn/start", params)
+                    result = await self.client.request("turn/start", start_params)
                     # Notifications own turn state; a quick completed turn may precede this reply.
                 self.store.request_state(rid, "accepted", result)
             except Exception as exc:
