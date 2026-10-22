@@ -51,6 +51,53 @@ async def test_busy_snapshot_defers_without_interrupting_or_overwriting(host, tm
     assert not any(m == "turn/interrupt" for m, p in native.calls)
 
 
+async def test_native_snapshot_keeps_live_state_and_sources_without_caches(host, tmp_path, monkeypatch):
+    settings, engine, native, client = host
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    retained = ["auth.json", "sessions/rollout.jsonl", "plugins/config.json"]
+    omitted = ["cache/catalog.json", "plugins/cache/template.bin", "log/runtime.log", ".tmp/socket"]
+    for name in retained + omitted:
+        path = codex_home / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("fixture: " + name)
+    project = tmp_path / "source"
+    (project / ".git").mkdir(parents=True)
+    (project / "uncommitted.txt").write_text("unfinished user work")
+    (project / ".venv").mkdir()
+    (project / ".venv/cache").write_text("rebuildable")
+    registered = engine.store.register_project("Source", str(project))
+    target = tmp_path / "native.tar.gz"
+    args = argparse.Namespace(
+        destination=target, wait=0, include_codex=True, project_sources=True, config=None
+    )
+    # The writer remains open with WAL data so a raw database copy would lose the row.
+    with sqlite3.connect(codex_home / "state_5.sqlite") as writer:
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("CREATE TABLE history(message TEXT)")
+        writer.execute("INSERT INTO history VALUES ('retained native turn')")
+        writer.commit()
+        with sqlite3.connect(codex_home / "logs_2.sqlite") as logs:
+            logs.execute("CREATE TABLE logs(value TEXT)")
+        await snapshot(settings, client, args)
+    restored = tmp_path / "restore-native"
+    with tarfile.open(target) as archive:
+        names = archive.getnames()
+        assert all("codex/" + name in names for name in retained)
+        assert all("codex/" + name not in names for name in omitted)
+        assert "codex/logs_2.sqlite" not in names
+        assert not any(name.endswith(("-wal", "-shm")) for name in names)
+        archive.extractall(restored, filter="data")
+    with sqlite3.connect(restored / "codex/state_5.sqlite") as db:
+        assert db.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        assert db.execute("SELECT message FROM history").fetchone()[0] == "retained native turn"
+    restored_source = restored / "projects" / registered["id"]
+    assert (restored_source / "uncommitted.txt").read_text() == "unfinished user work"
+    assert not (restored_source / ".venv").exists()
+    assert all((codex_home / name).exists() for name in omitted)
+
+
 async def test_drain_preserves_input_for_retry_instead_of_rejecting_permanently(host, tmp_path):
     settings, engine, native, client = host
     s = engine.store.create_session(str(tmp_path), "Pending", "medium")

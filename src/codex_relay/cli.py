@@ -136,6 +136,11 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                 if codex_home.exists():
 
                     def codex_filter(member):
+                        relative = Path(member.name).relative_to("codex")
+                        if relative.parts and relative.parts[0] in {"cache", "log", ".tmp"}:
+                            return None
+                        if relative.parts[:2] == ("plugins", "cache"):
+                            return None
                         if member.name.endswith(
                             (".db", ".sqlite", ".sqlite3", "-wal", "-shm", ".sock", ".lock")
                         ):
@@ -145,6 +150,8 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                     archive.add(codex_home, arcname="codex", filter=codex_filter)
                     for source in codex_home.glob("*"):
                         if source.is_file() and source.suffix in {".db", ".sqlite", ".sqlite3"}:
+                            if source.name.startswith("logs_"):
+                                continue
                             import sqlite3
 
                             with (

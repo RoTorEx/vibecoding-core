@@ -80,7 +80,10 @@ verification. A bot restart does not stop work; an engine restart can.
 drains new agent input and waits up to 300 seconds for current turns. It uses
 SQLite online backups and archive readback, includes retained uploads and
 private settings, and optionally native Codex history/auth plus registered Git
-sources including uncommitted files. Build caches are excluded. Home is not
+sources including uncommitted files. Build caches, native download/plugin caches,
+temporary files and operational log databases are excluded; native conversation
+databases, session rollouts, auth and plugin configuration are retained. This
+filter affects snapshots only and never removes installed vendor resources. Home is not
 recursively archived merely because it is registered as a launch directory.
 The archive and checksum must be stored privately. A busy host defers the backup
 without interrupting a turn. Do not copy live database/WAL files blindly.
