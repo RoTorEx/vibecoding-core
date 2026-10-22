@@ -1,3 +1,32 @@
+UV ?= uv
+
+.PHONY: install check test lint fmt run engine doctor deploy-bot deploy-engine rollback
+install:
+	$(UV) sync --frozen
+check: lint test
+	$(UV) run --frozen mypy src
+	$(UV) run --frozen codex-relay --help >/dev/null
+lint:
+	$(UV) run --frozen ruff check src tests scripts
+	$(UV) run --frozen ruff format --check src tests scripts
+test:
+	$(UV) run --frozen pytest -q
+fmt:
+	$(UV) run --frozen ruff check --fix src tests scripts
+	$(UV) run --frozen ruff format src tests scripts
+run:
+	$(UV) run --frozen codex-relay bot
+engine:
+	$(UV) run --frozen codex-relay engine
+doctor:
+	$(UV) run --frozen codex-relay doctor
+deploy-bot:
+	python3 scripts/deploy.py bot
+deploy-engine:
+	python3 scripts/deploy.py engine
+rollback:
+	python3 scripts/deploy.py rollback
+
 .PHONY: vibe-kernel-path vibe-kernel-set vibe-pull
 
 vibe-kernel-path:

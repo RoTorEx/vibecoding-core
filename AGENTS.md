@@ -34,17 +34,14 @@ This project uses committed local copies of the Vibecoding Kernel.
 - Add project-specific routing here only when it prevents repeated mistakes or
   unnecessary context loading.
 
-## First project brief
+## Project routing
 
-<!-- VIBE:PROJECT_BRIEF_BOOTSTRAP_START -->
-
-When `README.md` or `BUSINESS.md` contains `VIBE:PROJECT_BRIEF_REQUIRED`, resolve
-the brief before the first substantive implementation:
-
-- use the current user request when it already explains the user, problem, and
-  useful outcome;
-- otherwise ask one short question covering those three points;
-- write only known facts into README and BUSINESS; do not invent business rules;
-- remove both brief markers and this entire bootstrap section when complete.
-
-<!-- VIBE:PROJECT_BRIEF_BOOTSTRAP_END -->
+- Work personally, without subagents.
+- Read BUSINESS.md before changing conversation or navigation behavior.
+- Read docs/architecture.md for persistence, transport, and recovery.
+- Read docs/operations.md before installation, deployment, backup, or rollback.
+- Run make check; exercise meaningful lifecycle and routing behavior.
+- Bot deployment must never restart the engine. Agent turns have full host access
+  by explicit owner choice; do not introduce prompt rewriting or execution gates.
+- Keep credentials, Codex history, and runtime databases outside Git and logs.
+- Write code and project artifacts in English.

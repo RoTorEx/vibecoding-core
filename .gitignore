@@ -18,3 +18,8 @@ __pycache__/
 .ruff_cache/
 
 .vibe/KERNEL_SOURCE
+
+.venv/
+*.db
+*.db-*
+*.sock
