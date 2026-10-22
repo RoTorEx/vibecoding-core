@@ -58,7 +58,9 @@ Data: `~/.local/state/codex-relay/`. Installed code:
 No public port, Redis, database server, Docker or model API key is required.
 
 See [product rules](BUSINESS.md), [architecture](docs/architecture.md), and
-[operations and recovery](docs/operations.md). Voice and other host transports
+[operations and recovery](docs/operations.md). The first VPS installation and
+its remaining owner checks are recorded in [deployment evidence](docs/verification.md).
+Voice and other host transports
 are later stages. Native history survives restarts; interrupted commands and
 RPCs with unknown outcomes are not blindly replayed. Telegram display delivery
 is at least once and can duplicate a response after an ambiguous network failure.

@@ -1,10 +1,14 @@
-# Accepted implementation
+# Remaining acceptance and onboarding
 
-- Finish VPS deployment and verify real Telegram interaction, native file changes,
-  image handling, steering/stop, bot-only updates and rollback.
-- Finish developer GitHub SSH registration when the owner's device login completes.
-- Register the private snapshot with backup-service and verify off-host recovery.
-- Record observed results and unavailable phone-side acceptance checks.
+1. Complete phone-side `/menu`, session navigation, text and captioned image
+   acceptance in @GardenSandbox_bot when the owner is available.
+2. Register the prepared alex SSH public key in RoTorEx; verify private clone/push
+   and complete GitHub CLI authentication. The previous device login expired.
+3. Coordinate revocation/replacement and personal browser reauthorization of the
+   backup-service OAuth credential exposed in the earlier audit output, then
+   verify all affected backup consumers.
+
+Deployment and bounded acceptance evidence: [docs/verification.md](docs/verification.md).
 
 ## Accepted constraints
 
@@ -16,5 +20,6 @@ unrelated working-tree edits must remain intact.
 
 ## Awaiting external input
 
-GitHub device-login confirmation. Codex is authenticated by the documented
-private auth-cache fallback. GardenSandbox_bot token identity has been verified.
+Phone acceptance, GitHub key registration and personal Google reauthorization.
+Codex is authenticated by the documented private auth-cache fallback.
+GardenSandbox_bot token identity has been verified.
