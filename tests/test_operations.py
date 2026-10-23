@@ -9,13 +9,15 @@ spec.loader.exec_module(ops)
 
 
 @pytest.fixture
-def operations(tmp_path):
+def operations(tmp_path, monkeypatch):
     home = tmp_path / "home"
     state = tmp_path / "state"
     (tmp_path / ".env").write_text(
         f"APP_HOME={home}\nAPP_STATE_DIR={state}\nCORE_REVISION=core-old\nBOT_REVISION=bot-old\n"
     )
-    return ops.Operations(tmp_path)
+    operations = ops.Operations(tmp_path)
+    monkeypatch.setattr(operations, "cleanup_images", lambda component: None)
+    return operations
 
 
 def test_bot_update_recreates_only_bot_and_keeps_core_identity(operations):

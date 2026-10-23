@@ -46,3 +46,12 @@ The native protocol baseline is Codex 0.163.0 plus its matching code-mode host.
 Source and host path validation, request/lifecycle ordering, migration, backup
 integrity, container-to-host execution, Stop and independent bot updates require
 meaningful checks. No subagents. Voice and additional hosts remain deferred.
+
+## Independent versioning
+
+This component owns its semantic version, changelog, release commit and annotated
+vMAJOR.MINOR.PATCH tag. The sibling version and deployment revision do not change
+when this repository is released. API protocol compatibility is separate from
+product versions. Follow the local Kernel release contract through make release
+and make release-push. Source package version, built metadata, CLI and runtime
+version reports must agree.

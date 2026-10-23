@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add independent Kernel-compliant interactive release and atomic tag publishing,
+  with one canonical package version and matching CLI/build metadata.
+- Isolate deployment tests from installed host image-cleanup helpers.
+
 - Split Remote Vibecoding into independent Core and Telegram repositories in one
   workspace and one Compose project with two containers. Preserve native host
   execution through a dedicated forced-command SSH identity, session state and
