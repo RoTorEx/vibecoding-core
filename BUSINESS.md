@@ -35,8 +35,9 @@ can interrupt work and must preserve thread identity, history and source files.
 
 Backups use online SQLite snapshots, preserve private configuration, native
 history/auth and registered Git source changes, and exclude rebuildable caches.
-An explicitly registered Remote Vibecoding workspace includes both child Git
-repositories. Home is never recursively backed up as a generic project.
+An explicitly registered Remote Vibecoding workspace includes its root router
+Git repository and both independent component repositories. The root owns routing
+and has no product release version. Core retains shared Compose/Make ownership. Home is never recursively backed up as a generic project.
 Existing offsite backup credentials/retention remain unchanged; the owner
 explicitly declined Google OAuth credential changes after the earlier exposure.
 

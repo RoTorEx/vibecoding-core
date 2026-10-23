@@ -191,7 +191,13 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                         if not all((p / ".git").exists() for p, _ in sources):
                             raise ValueError("Workspace repository is missing")
 
-                    def source_filter(member):
+                    env_entry = "projects/" + project["id"] + "/.env" if marker.exists() else None
+
+                    def source_filter(member, env_entry=env_entry):
+                        # Private Compose settings are stored separately under config/.
+                        # The live absolute .env link cannot be restored with tar's data filter.
+                        if member.name == env_entry:
+                            return None
                         return None if any(p in excluded for p in Path(member.name).parts) else member
 
                     for tree, archive_name in sources:

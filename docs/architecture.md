@@ -1,8 +1,10 @@
 # Remote Vibecoding architecture
 
-One workspace under personal/apps contains two independent Git repositories.
-The workspace itself is not a third repository. Compose, common Make targets,
-workspace metadata and entrypoint links are versioned in Vibecoding Core.
+One workspace under personal/apps contains a small root Git repository and two
+independent component Git repositories. The root owns its versioned AGENTS.md
+router, README and ignore rules, with no product version or release process.
+Component folders are ignored by the root, not submodules. Compose, common Make
+targets and workspace metadata remain versioned in Core and linked at the root.
 
 ## Two containers
 

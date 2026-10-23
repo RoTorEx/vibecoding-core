@@ -121,11 +121,16 @@ async def test_drain_preserves_input_for_retry_instead_of_rejecting_permanently(
     assert engine.store.request("held")["state"] == "accepted"
 
 
-async def test_workspace_snapshot_includes_both_independent_git_sources(host, tmp_path):
+@pytest.mark.parametrize("root_git", [False, True])
+async def test_workspace_snapshot_includes_both_independent_git_sources(host, tmp_path, root_git):
     settings, engine, native, client = host
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "workspace.toml").write_text('repositories = ["telegram-vibecoding", "vibecoding-core"]\n')
+    if root_git:
+        (workspace / ".git").mkdir()
+        (workspace / "AGENTS.md").write_text("Workspace router")
+        (workspace / ".env").symlink_to(settings.private_config_dir / "compose.env")
     for name in ["telegram-vibecoding", "vibecoding-core"]:
         repo = workspace / name
         (repo / ".git").mkdir(parents=True)
@@ -140,3 +145,10 @@ async def test_workspace_snapshot_includes_both_independent_git_sources(host, tm
         for name in ["telegram-vibecoding", "vibecoding-core"]:
             stream = archive.extractfile(f"projects/{project['id']}/{name}/uncommitted.py")
             assert stream.read().decode() == name
+
+        if root_git:
+            assert f"projects/{project['id']}/AGENTS.md" in archive.getnames()
+            assert f"projects/{project['id']}/.env" not in archive.getnames()
+            restored = tmp_path / "restored-workspace"
+            archive.extractall(restored, filter="data")
+            assert (restored / "projects" / project["id"] / "AGENTS.md").read_text() == "Workspace router"

@@ -53,7 +53,11 @@ start both implementations over the same SQLite state.
 
 The Core CLI creates consistent private snapshots with online SQLite backups,
 native history/auth, private application config and registered project sources.
-An explicit workspace.toml includes both child Git trees and uncommitted files.
+The registered workspace includes its root Git tree, both child repositories and
+uncommitted files. Legacy non-Git roots still use workspace.toml to select the
+children. Root snapshots omit the absolute .env link; private Compose configuration
+is captured under config/. Recreate that link through scripts/provision_host.py
+after restoring the private configuration.
 Home is never recursively included as a generic workspace. Rebuildable native
 and build caches, logs and runtime helper links are excluded.
 
