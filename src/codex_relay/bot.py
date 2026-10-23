@@ -8,6 +8,7 @@ import os
 import signal
 import time
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any
 
@@ -42,6 +43,20 @@ from codex_relay.presentation import split_text
 from codex_relay.store import BotStore
 
 log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def foreground(bg):
+    # aiogram-dialog 2.6.0 skips awaiting its dispatcher task if its fg body raises.
+    # Finish the context normally, then propagate the error to our durable retry loop.
+    failure = None
+    async with bg.fg() as manager:
+        try:
+            yield manager
+        except BaseException as exc:
+            failure = exc
+    if failure is not None:
+        raise failure
 
 
 def authorized(body: dict, owner: int) -> bool:
@@ -182,12 +197,12 @@ class BotRuntime:
     async def initialize_panel(self):
         async with self.ui_lock:
             bg = self.background.bg(self.bot, self.settings.allowed_user_id, self.settings.allowed_user_id)
-            async with bg.fg() as manager:
+            async with foreground(bg) as manager:
                 await open_screen(manager, Screens.deck)
 
     async def render_panel(self):
         bg = self.background.bg(self.bot, self.settings.allowed_user_id, self.settings.allowed_user_id)
-        async with bg.fg() as manager:
+        async with foreground(bg) as manager:
             await manager.show(ShowMode.EDIT)
 
     @staticmethod
@@ -333,7 +348,7 @@ class BotRuntime:
         else:
             raise ValueError("That input step expired. Use /menu.")
         bg = self.background.bg(self.bot, self.settings.allowed_user_id, self.settings.allowed_user_id)
-        async with bg.fg() as manager:
+        async with foreground(bg) as manager:
             if action == "location":
                 await back(None, None, manager)
                 await go(manager, Screens.sessions)

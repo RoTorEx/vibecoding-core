@@ -8,6 +8,8 @@
   editable panel. Add inline reasoning/Plan controls, curated model selection,
   session Details and independent UI upgrade/rollback recovery.
 - Configure the VPS repository deploy key and refresh Telegram command labels.
+- Await background dialog cleanup before propagating failed panel edits to the
+  durable retry loop, avoiding unhandled SDK task exceptions.
 - Exclude rebuildable native/plugin caches and operational logs from private
   snapshots while retaining WAL-backed conversation state and source changes.
 - Omit native runtime helper links so recovery archives can be safely extracted
