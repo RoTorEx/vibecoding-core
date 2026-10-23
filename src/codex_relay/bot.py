@@ -36,6 +36,7 @@ from aiogram_dialog import DialogManager, ShowMode, setup_dialogs
 from aiogram_dialog.api.exceptions import UnknownIntent, UnknownState
 from aiogram_dialog.manager.message_manager import MessageManager
 
+from codex_relay import BOT_NAME
 from codex_relay.config import Settings
 from codex_relay.dialogs import Screens, back, go, make_dialog, open_screen
 from codex_relay.engine import EngineClient
@@ -567,6 +568,10 @@ class BotRuntime:
                 "This bot already has a webhook. Resolve the existing consumer before polling."
             )
         await self.engine.call("/health")
+        for language in ("", "en", "ru"):
+            current_name = await self.bot.get_my_name(language_code=language)
+            if current_name.name != BOT_NAME:
+                await self.bot.set_my_name(name=BOT_NAME, language_code=language)
         commands = [
             BotCommand(command="start", description="Open Main Deck"),
             BotCommand(command="menu", description="Open Main Deck"),

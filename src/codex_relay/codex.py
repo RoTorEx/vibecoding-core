@@ -9,7 +9,7 @@ import signal
 from collections.abc import Callable
 from typing import Any
 
-from codex_relay import __version__
+from codex_relay import CORE_NAME, __version__
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class CodexClient:
                 {
                     "clientInfo": {
                         "name": "codex_relay",
-                        "title": "Codex Relay",
+                        "title": CORE_NAME,
                         "version": __version__,
                     },
                     "capabilities": {"experimentalApi": True},

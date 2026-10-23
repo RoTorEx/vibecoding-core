@@ -1,10 +1,18 @@
 # Architecture
 
-One repository builds two services. Bot polls Telegram and owns bot.db. Engine
+One repository builds two services: Telegram Vibecoding and Vibecoding Core.
+Telegram Vibecoding (Bot) polls Telegram and owns bot.db. Vibecoding Core (Engine)
 listens on a mode-0600 Unix socket, owns engine.db, and supervises one private
 Codex app-server child over stdio. Neither service opens a public listener.
 Engine session identifiers are independent of Telegram, Codex thread IDs, and
 project names. A host_id accompanies presentation and future host routing.
+
+Operator aliases telegram-vibecoding.service and vibecoding-core.service point
+to the existing units, so there are still two running services. Historical
+codex-relay paths and internal module/CLI identifiers are retained for compatibility.
+The snapshot oneshot/timer and temporary updater maintain these components;
+they are not separate application services. Offsite backup is an existing host
+service rather than a newly introduced part of this application.
 
 ## Native conversation boundary
 

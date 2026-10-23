@@ -78,7 +78,9 @@ def main():
         time.sleep(1)
     else:
         raise RuntimeError("Engine startup check failed; inspect its journal")
-    subprocess.run([str(launcher), "project", "add", str(source), "--name", "Codex Relay"], check=True)
+    subprocess.run(
+        [str(launcher), "project", "add", str(source), "--name", "Telegram Vibecoding"], check=True
+    )
     subprocess.run(["sudo", "-n", "systemctl", "start", "codex-relay-bot"], check=True)
     print(
         "Engine and bot installed. Verify Telegram interaction and recovery before enabling snapshot timer."

@@ -9,9 +9,13 @@ from pathlib import Path
 
 
 def unit(component: str, user: str, home: Path) -> str:
+    name, alias = {
+        "bot": ("Telegram Vibecoding", "telegram-vibecoding.service"),
+        "engine": ("Vibecoding Core", "vibecoding-core.service"),
+    }[component]
     binary = home / ".local/share/codex-relay" / (component + "-current") / ".venv/bin/codex-relay"
     return f"""[Unit]
-Description=Codex Relay {component}
+Description={name}
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=60
@@ -36,6 +40,7 @@ LogRateLimitBurst=200
 
 [Install]
 WantedBy=multi-user.target
+Alias={alias}
 """
 
 
@@ -61,7 +66,7 @@ def main():
         target.chmod(0o644)
     snapshot = home / ".local/share/codex-relay/engine-current/scripts/snapshot.py"
     Path("/etc/systemd/system/codex-relay-snapshot.service").write_text(f"""[Unit]
-Description=Codex Relay consistent idle recovery snapshot
+Description=Vibecoding Core recovery snapshot
 After=codex-relay-engine.service
 
 [Service]
@@ -74,7 +79,7 @@ UMask=0077
 Nice=10
 """)
     Path("/etc/systemd/system/codex-relay-snapshot.timer").write_text("""[Unit]
-Description=Attempt an idle Codex Relay snapshot hourly
+Description=Vibecoding Core hourly snapshot timer
 
 [Timer]
 OnBootSec=10min
@@ -85,13 +90,15 @@ Unit=codex-relay-snapshot.service
 WantedBy=timers.target
 """)
     subprocess.run(["systemctl", "daemon-reload"], check=True)
+    for helper in ["service", "timer"]:
+        Path(f"/etc/systemd/system/codex-relay-snapshot.{helper}").chmod(0o644)
     for component in ["engine", "bot"]:
         subprocess.run(["systemctl", "enable", "codex-relay-" + component], check=True)
     if args.start:
         selected = ["engine", "bot"] if args.start == "both" else [args.start]
         for component in selected:
             subprocess.run(["systemctl", "start", "codex-relay-" + component], check=True)
-    print("Independent Codex Relay units installed. Existing services were not restarted.")
+    print("Telegram Vibecoding and Vibecoding Core units installed. Existing services were not restarted.")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,11 @@ inference turn can complete. Verify one real native turn before travel.
 
 ## Independent services
 
+The component names are Telegram Vibecoding and Vibecoding Core. Their operator
+aliases are telegram-vibecoding.service and vibecoding-core.service; the previous
+unit identifiers below remain valid for existing deployments and rollback.
+Aliases reference the same processes and do not create extra services.
+
 `scripts/install_host.py` installs separate codex-relay-engine and
 codex-relay-bot system units running as the developer. The bot token must be
 verified with Telegram getMe before starting polling. The owner initially
@@ -43,7 +48,7 @@ Routine commands on the VPS:
 systemctl status codex-relay-engine codex-relay-bot
 journalctl -u codex-relay-engine -u codex-relay-bot --since '-10 minutes'
 /home/alex/.local/bin/codex-relay doctor
-/home/alex/.local/bin/codex-relay project add /home/alex/Development/personal/bots/codex-relay --name 'Codex Relay'
+/home/alex/.local/bin/codex-relay project add /home/alex/Development/personal/bots/codex-relay --name 'Telegram Vibecoding'
 /home/alex/.local/bin/codex-relay project list
 /home/alex/.local/bin/codex-relay session list
 ```

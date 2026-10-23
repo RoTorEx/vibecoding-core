@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Name the two components Telegram Vibecoding and Vibecoding Core. Update bot
+  display names, bootstrap labels, native client title and service descriptions;
+  add operator service aliases while retaining existing state and identifiers.
 - Replace overlapping Projects/Sessions/Actions navigation with a location-first
   Main Deck, numbered pages, scoped sessions and a consistent Deck/Back footer.
 - Show requests, streaming responses, questions and paginated history in one

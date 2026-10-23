@@ -1,8 +1,20 @@
-# Codex Relay
+# Telegram Vibecoding and Vibecoding Core
 
-A private Telegram client for native Codex conversations on your own host.
-One chat, named sessions, text and images, immediate steering, and independent
-bot/engine services. No added LLM, translated prompts or command approval layer.
+Two independently managed components share this source repository:
+
+- **Telegram Vibecoding**: the private Telegram bot, menus, text/image input and
+  conversation display.
+- **Vibecoding Core**: the host service that owns sessions, history and native
+  Codex execution. It keeps working when the Telegram bot restarts.
+
+Core launches Codex and its command runtime as child processes. Recovery snapshots
+run as a short scheduled task; offsite storage uses the existing backup-service.
+Updating Core uses a temporary updater task. These are not additional permanent
+application services. No added LLM or prompt rewriting is involved.
+
+Operator aliases are telegram-vibecoding.service and vibecoding-core.service.
+Existing codex-relay package, repository slug, CLI and data paths remain technical
+compatibility identifiers. They do not denote another service or product.
 
 ## Use
 

@@ -1,10 +1,25 @@
-# Codex Relay
+# Telegram Vibecoding and Vibecoding Core
 
 ## Purpose and actors
 
 Aleksey uses a private Telegram bot to work directly with Codex while travelling.
 The first host is his existing personal Debian VPS. The first development
-project is Codex Relay itself. Corporate projects are excluded from onboarding.
+project is Telegram Vibecoding itself. Corporate projects are excluded from onboarding.
+
+## Components and names
+
+Telegram Vibecoding owns the Telegram interface. Vibecoding Core is the single
+host infrastructure service that owns agent sessions and execution. These are
+the only two permanent application services. They currently share one source
+repository and remain independently restartable and deployable.
+
+Native Codex and its execution helper are Core child processes. The recovery
+snapshot timer/oneshot and temporary updater are maintenance tasks, not extra
+application layers. Offsite backup uses the pre-existing backup-service.
+
+Use these two component names in UI, service descriptions and documentation.
+The legacy repository/package/data identifiers remain compatible. The source
+repository and data paths have not been split or migrated in this naming change.
 
 ## Product contract
 
