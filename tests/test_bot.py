@@ -613,3 +613,22 @@ async def test_long_answer_is_browsable_in_one_panel_without_dropping_text(app):
         await click(app, "◀")
     assert "".join(reversed(bodies)) == "You\nOriginal prompt\n\nCodex\n" + answer
     assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+
+
+async def test_incompatible_fsm_reset_reuses_the_published_panel(app):
+    runtime, transport, engine, native = app
+    await runtime.initialize_panel()
+    first = runtime.store.get("panel_id")
+    with runtime.store.db:
+        runtime.store.db.execute("DELETE FROM meta WHERE key LIKE 'fsm:%'")
+    runtime.store.set("ui_version", "1")
+    runtime.store.set("screen", "")
+    replacement = BotRuntime(runtime.settings, bot=runtime.bot, engine=runtime.engine)
+    replacement.throttle = runtime.throttle
+    try:
+        await replacement.initialize_panel()
+        assert replacement.store.get("panel_id") == first
+        assert "Main Deck" in panel(transport).text
+        assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+    finally:
+        replacement.store.close()

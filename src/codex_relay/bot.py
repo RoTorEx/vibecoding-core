@@ -198,6 +198,8 @@ class BotRuntime:
         async with self.ui_lock:
             bg = self.background.bg(self.bot, self.settings.allowed_user_id, self.settings.allowed_user_id)
             async with foreground(bg) as manager:
+                if not manager.has_context() and self.store.get("panel_id"):
+                    manager.current_stack().last_message_id = int(self.store.get("panel_id"))
                 await open_screen(manager, Screens.deck)
 
     async def render_panel(self):

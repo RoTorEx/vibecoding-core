@@ -10,6 +10,8 @@
 - Configure the VPS repository deploy key and refresh Telegram command labels.
 - Await background dialog cleanup before propagating failed panel edits to the
   durable retry loop, avoiding unhandled SDK task exceptions.
+- Reuse the published panel when rebuilding incompatible navigation, and isolate
+  deployment checks from host configuration and live menu state.
 - Exclude rebuildable native/plugin caches and operational logs from private
   snapshots while retaining WAL-backed conversation state and source changes.
 - Omit native runtime helper links so recovery archives can be safely extracted

@@ -8,6 +8,13 @@ deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
 
 
+@pytest.fixture(autouse=True)
+def private_deployment_config(tmp_path, monkeypatch):
+    config = tmp_path / "deployment.toml"
+    config.write_text(f'data_dir = "{tmp_path / "isolated-state"}"\n')
+    monkeypatch.setenv("CODEX_RELAY_CONFIG", str(config))
+
+
 def test_bot_activation_does_not_restart_or_switch_engine(tmp_path):
     old, new, engine = [tmp_path / x for x in ["old", "new", "engine"]]
     for p in [old, new, engine]:
