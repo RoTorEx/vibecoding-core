@@ -1,7 +1,7 @@
 # Remaining acceptance
 
-The two-repository, two-container Remote Vibecoding migration is deployed and
-verified. See docs/deployment-2026-10-23.md for evidence and rollback boundaries.
+The Remote Vibecoding workspace and its two-container deployment are running
+and verified. See docs/deployment-2026-10-23.md for evidence and rollback boundaries.
 
 - Obtain explicit owner permission for the new private snapshot manual upload to
   the existing Google Drive destination, then verify staged offsite recovery.

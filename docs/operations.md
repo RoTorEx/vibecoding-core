@@ -88,3 +88,25 @@ activation. A new image or upload alone does not prove a recoverable system.
 
 Keep an independent phone SSH recovery path. Voice, extra hosts and live session
 migration between hosts remain deferred.
+
+## Workspace entrypoint acceptance (24 October 2026)
+
+The public RoTorEx/remote-vibecoding root checkout is installed on the Mac and VPS.
+Its AGENTS.md router is version 2026-10-24.1; the root has no product version or
+release tags. Root routing loads only the selected component's instructions.
+Home and Remote Vibecoding remain registered launch locations with their existing
+identities. The installed personal ~/.codex/AGENTS.md was copied unchanged to the
+VPS and verified against the local SHA-256; it is outside all project Git trees.
+
+Core 0.1.5 and Telegram Vibecoding 0.1.7 are deployed. Mac/VPS checks passed
+(36 Core tests, 47 frontend tests, lint, formatting, types and CLI checks). A private
+local snapshot restored the root router, all three Git trees, both component
+sources and valid SQLite state using tar's safe data filter. The test archive and
+restored private files were removed; no offsite upload was performed.
+
+The frontend's real Telegram SDK refreshed the existing owner panel in place:
+its message ID and selected session were unchanged. The API returned bold/code
+entities for the retained answer, with no raw bold markers or table separators.
+A deleted temporary owner-only message verified bold, italic, strikethrough,
+links, inline code and preformatted code. Core was not restarted by that frontend
+acceptance check. The final deployment retains exactly two healthy containers.
