@@ -11,16 +11,10 @@ verified. See docs/deployment-2026-10-23.md for evidence and rollback boundaries
   legacy rollback bundle until acceptance and replacement recovery verification;
   then agree its retention/removal.
 
-## Active Telegram improvements and local voice
+## Local voice acceptance
 
-Accepted scope: default Settings styling; no Other location or archive browser;
-Config only inside an open session; Back-left/Deck-right footers; ten sessions
-per page with paired arrows, completed-response ages (s/m/h/d) and working icons.
-These source changes pass focused and full checks and are being released first.
-
-Next, implement local voice transcription inside Core using an offline Whisper
-worker with bounded concurrency. Keep text and images; video was explicitly
-cancelled. Preserve raw voice input, captured session targets and durable retries.
-Verify Russian transcription, a Telegram voice request reaching native Codex,
-photo recognition, and measured VPS time/CPU/peak memory. Do not add a third
-container or a paid speech API. Additional hosts remain deferred.
+Menu simplification, paired session pagination, response ages and default Settings
+styling are deployed. Local voice implementation passes component checks. Verify
+Russian speech on the VPS with measured elapsed time, CPU and peak memory, then
+verify Telegram download to Core transcription to native response and retained
+photo recognition. Video is explicitly out of scope. Keep exactly two containers.

@@ -3,7 +3,7 @@ ARG APP_UID=1002
 ARG APP_GID=1002
 ARG APP_HOME=/home/alex
 ARG REVISION=development
-RUN apt-get update && apt-get install -y --no-install-recommends openssh-client git ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client git ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid "$APP_GID" developer && useradd --uid "$APP_UID" --gid "$APP_GID" \
     --home-dir "$APP_HOME" --create-home developer

@@ -22,6 +22,8 @@ class Settings:
     host_root: Path = Path("/")
     private_config_dir: Path = Path("~/.config/remote-vibecoding")
 
+    speech_model_dir: Path = Path("~/.cache/remote-vibecoding/whisper-base")
+
     @property
     def socket(self) -> Path:
         return self.runtime_dir / "engine.sock"
@@ -44,7 +46,7 @@ class Settings:
         data = Path(values.pop("data_dir", "~/.local/state/remote-vibecoding")).expanduser()
         runtime = Path(values.pop("runtime_dir", str(data / "run"))).expanduser()
         development = Path(values.pop("development_root", "~/Development/personal")).expanduser()
-        for key in ["host_root", "private_config_dir"]:
+        for key in ["host_root", "private_config_dir", "speech_model_dir"]:
             if key in values:
                 values[key] = Path(values[key]).expanduser()
         values.setdefault("codex_command", shutil.which("codex") or str(Path.home() / ".local/bin/codex"))

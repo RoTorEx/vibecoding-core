@@ -45,7 +45,7 @@ explicitly declined Google OAuth credential changes after the earlier exposure.
 The native protocol baseline is Codex 0.163.0 plus its matching code-mode host.
 Source and host path validation, request/lifecycle ordering, migration, backup
 integrity, container-to-host execution, Stop and independent bot updates require
-meaningful checks. No subagents. Voice and additional hosts remain deferred.
+meaningful checks. No subagents. Additional hosts remain deferred.
 
 ## Independent versioning
 
@@ -79,3 +79,29 @@ and executing so the UI can show elapsed time without inventing an ETA.
 Session lists include last_response, the timestamp of the last completed agent
 answer or plan. Commentary, public summaries, renames and settings changes do
 not make an old answer appear new. No schema or identity migration is needed.
+
+## Local voice
+
+Accept text, supported images and voice recordings; video is explicitly out of
+scope. Core recognizes voice locally with pinned multilingual Whisper base,
+CPU INT8, one thread and one worker at a time. Recognition uses no paid API or
+additional LLM. The exact transcript then becomes native Codex user text and is
+visible in the conversation; provider processing of that text follows normal
+agent behavior. Original typed input and recordings remain unchanged.
+
+Recordings are limited to 20 MB (Telegram cloud download ceiling) and five minutes
+(to bound decoded memory and keep mobile interactions practical on the two-core
+VPS). A worker times out after ten minutes, giving slow recognition headroom
+without retaining a stuck process indefinitely. The decoder enforces duration
+independently of Telegram metadata. Stop cancels and reaps preprocessing and
+queued input; shutdown retains locally replayable queued work. Each successful
+transcript is durably cached by request identity before any native dispatch.
+Unknown native outcomes retain the existing no-replay rule. Decode/recognition
+failure never invokes the agent. Model memory is released when its process exits.
+
+Raw recordings stay in private uploads and normal state snapshots; rebuildable
+model weights stay in the private host cache and are excluded from snapshots.
+Use scripts/install_speech_model.py to install the pinned model. Runtime model
+loading is offline. Transcription events record recording duration, elapsed time,
+CPU seconds and process peak RSS for load assessment. Tests cover captured input,
+cache/retry, parallel text work, failure, cancellation and restart boundaries.

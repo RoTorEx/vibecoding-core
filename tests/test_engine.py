@@ -307,3 +307,102 @@ async def test_session_list_last_response_ignores_configuration_and_progress(hos
     listed = (await client.call("/sessions"))[0]
     assert listed["name"] == "Renamed"
     assert listed["last_response"] == stamp
+
+
+async def test_voice_is_durable_cached_and_passed_verbatim_without_blocking_text(host):
+    import asyncio
+    import json
+
+    settings, engine, native, client = host
+    a, b = await new(host, "Voice"), await new(host, "Text")
+    voice = settings.data_dir / "recording.ogg"
+    voice.write_bytes(b"OggS")
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = []
+    transcript = "Проверь голос,  текст и картинки."
+
+    async def transcribe(path):
+        calls.append(path)
+        started.set()
+        await release.wait()
+        return {"text": transcript, "language": "ru", "wall_seconds": 1.5}
+
+    engine.speech.transcribe = transcribe
+    body = {"request_id": "voice", "session_id": a["id"], "audio": [str(voice)]}
+    await client.call("/messages", body)
+    await started.wait()
+    assert engine.store.session(a["id"])["status"] == "transcribing"
+    await client.call("/messages", {"request_id": "text", "session_id": b["id"], "text": "text"})
+    for _ in range(100):
+        if engine.store.request("text")["state"] == "accepted":
+            break
+        await asyncio.sleep(0.001)
+    assert engine.store.request("text")["state"] == "accepted"
+    release.set()
+    await settle(engine)
+    assert [p["input"] for m, p in native.calls if m == "turn/start"][-1] == [
+        {"type": "text", "text": transcript}
+    ]
+    assert json.loads(engine.store.request("voice")["payload"]) == body
+    conversation = engine.store.conversation(a["id"])
+    assert conversation["replies"][0]["kind"] == "transcription"
+    assert conversation["replies"][0]["payload"]["text"] == transcript
+    # Safe local preprocessing retry reuses its durable result, without recognizing again.
+    engine.store.request_state("voice", "queued")
+    await engine.dispatch("voice")
+    assert calls == [str(voice)]
+    assert await client.call("/messages", body) == {"request_id": "voice", "state": "accepted"}
+
+
+async def test_stop_cancels_voice_and_shutdown_keeps_it_replayable(host):
+    import asyncio
+
+    settings, engine, native, client = host
+    s = await new(host)
+    voice = settings.data_dir / "voice.ogg"
+    voice.write_bytes(b"OggS")
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def transcribe(path):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    engine.speech.transcribe = transcribe
+    body = {"request_id": "stop-voice", "session_id": s["id"], "audio": [str(voice)]}
+    await client.call("/messages", body)
+    await entered.wait()
+    await client.call(f"/sessions/{s['id']}/stop", {})
+    assert cancelled.is_set()
+    assert engine.store.request(body["request_id"])["state"] == "cancelled"
+    assert not any(m == "turn/start" for m, _ in native.calls)
+    assert engine.store.session(s["id"])["status"] == "interrupted"
+    entered.clear()
+    await client.call("/messages", {**body, "request_id": "restart-voice"})
+    await entered.wait()
+    # Shutdown cancels tasks without marking local queued work uncertain or cancelled.
+    for task in list(engine.tasks):
+        task.cancel()
+    await asyncio.gather(*engine.tasks, return_exceptions=True)
+    engine.store.recover()
+    assert engine.store.request("restart-voice")["state"] == "queued"
+    assert voice.read_bytes() == b"OggS"
+
+
+async def test_voice_failure_does_not_start_native_work(host):
+    settings, engine, native, client = host
+    s = await new(host)
+    voice = settings.data_dir / "bad.ogg"
+    voice.write_bytes(b"invalid")
+
+    async def transcribe(path):
+        raise ValueError("No speech detected in this recording")
+
+    engine.speech.transcribe = transcribe
+    await client.call("/messages", {"request_id": "bad-voice", "session_id": s["id"], "audio": [str(voice)]})
+    await settle(engine)
+    assert engine.store.request("bad-voice")["state"] == "failed"
+    assert engine.store.session(s["id"])["status"] == "failed"
+    assert not native.calls

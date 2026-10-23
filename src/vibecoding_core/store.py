@@ -198,6 +198,12 @@ class EngineStore(Database):
             "AND kind IN ('message','reasoning_summary','error','completed','question') ORDER BY id",
             (sid, user["id"], following["id"] if following else 9223372036854775807),
         )
+        user_payload = json.loads(user["payload"])
+        transcriptions = self.rows(
+            "SELECT * FROM events WHERE session_id=? AND kind='transcription' "
+            "AND json_extract(payload,'$.request_id')=? ORDER BY id",
+            (sid, user_payload.get("request_id")),
+        )
         counts = self.one(
             "SELECT COUNT(*) AS total, SUM(id<=?) AS position FROM events WHERE session_id=? AND kind='user'",
             (user["id"], sid),
@@ -205,7 +211,7 @@ class EngineStore(Database):
         assert counts is not None
         return {
             "user": {**user, "payload": json.loads(user["payload"])},
-            "replies": [{**r, "payload": json.loads(r["payload"])} for r in replies],
+            "replies": [{**r, "payload": json.loads(r["payload"])} for r in transcriptions + replies],
             "previous": previous["id"] if previous else None,
             "next": following["id"] if following else None,
             "index": counts["position"],
@@ -251,7 +257,9 @@ class EngineStore(Database):
                     "text": "Engine restarted while sending a message. Check History before retrying; it was not replayed."
                 },
             )
-        for row in self.rows("SELECT * FROM sessions WHERE status IN ('working','waiting','connecting')"):
+        for row in self.rows(
+            "SELECT * FROM sessions WHERE status IN ('working','waiting','connecting','transcribing')"
+        ):
             self.update_session(row["id"], status="interrupted", turn_id=None)
             self.event(
                 row["id"],

@@ -20,3 +20,12 @@ sibling. Common deployment continues to select each image revision separately.
 
 Both projects use Vibecoding Kernel 1.3.5. Run make vibe-pull to refresh the local
 committed rules; make vibe-kernel-set configures the machine-local kernel path.
+
+### Local speech model
+
+Run `python3 scripts/install_speech_model.py` on the execution host before enabling
+voice input. The private default is `~/.cache/remote-vibecoding/whisper-base`;
+`speech_model_dir` can override it in Core configuration. No ffmpeg host package
+or third container is required. The runtime uses bundled PyAV decoding and never
+downloads models. Accept one voice recording up to five minutes / 20 MB. Text and
+images continue to work while another session is recognizing speech.

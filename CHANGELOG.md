@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Recognize voice locally with bounded offline CPU workers, durable transcripts, Stop/restart safety and per-recording load metrics.
+
 ## [0.1.3] - 2026-10-23
 
 - Expose the last completed response timestamp in session lists, independently

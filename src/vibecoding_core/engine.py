@@ -16,6 +16,7 @@ from vibecoding_core import __version__
 from vibecoding_core.codex import CodexClient, RpcError, UnknownOutcome
 from vibecoding_core.config import Settings
 from vibecoding_core.host import inspect_directory
+from vibecoding_core.speech import Speech
 from vibecoding_core.store import EngineStore, identifier
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ class Engine:
         self.live: dict[str, dict] = {}
         self.tasks: set[asyncio.Task] = set()
         self.accepting = True
+        self.speech = Speech(settings.speech_model_dir.expanduser())
+        self.preprocessing: dict[str, asyncio.Task] = {}
 
     def spawn(self, coro) -> None:
         task = asyncio.create_task(coro)
@@ -73,23 +76,31 @@ class Engine:
             or not all(isinstance(x, str) for x in images)
         ):
             raise ValueError("Invalid message input")
-        if not text and not images:
-            raise ValueError("A message needs text or an image")
-        for image in images:
+        audio = payload.get("audio", [])
+        if not isinstance(audio, list) or not all(isinstance(x, str) for x in audio) or len(audio) > 1:
+            raise ValueError("Use one voice recording per message")
+        if not text and not images and not audio:
+            raise ValueError("A message needs text, an image or voice")
+        for image in images + audio:
             p = Path(image).resolve(strict=True)
             if not p.is_file() or p.stat().st_size > 20_000_000:
-                raise ValueError("Image must be an existing file of at most 20 MB")
+                raise ValueError("Media must be an existing file of at most 20 MB")
         if old := self.store.request(rid):
             if old["session_id"] != sid or json.loads(old["payload"]) != payload:
                 raise ValueError("request_id already belongs to a different message")
             return {"request_id": rid, "state": old["state"]}
         self.store.accept(rid, sid, payload)
-        self.store.event(sid, "user", {"text": text, "images": images, "request_id": rid})
+        self.store.event(sid, "user", {"text": text, "images": images, "audio": audio, "request_id": rid})
         if session["name"] == "New session" and text.strip():
             self.store.update_session(sid, name=" ".join(text.split())[:70])
         if not session["turn_id"]:
-            self.store.update_session(sid, status="connecting")
-            self.live[sid] = {"text": "", "activity": "Connecting", "started": time.time(), "summaries": {}}
+            self.store.update_session(sid, status="transcribing" if audio else "connecting")
+            self.live[sid] = {
+                "text": "",
+                "activity": "Transcribing" if audio else "Connecting",
+                "started": time.time(),
+                "summaries": {},
+            }
         self.spawn(self.dispatch(rid))
         return {"request_id": rid, "state": "queued"}
 
@@ -116,9 +127,52 @@ class Engine:
                 return
             dispatched = False
             try:
-                s = await self.ensure_thread(sid)
                 p = json.loads(row["payload"])
+                transcripts = []
+                if p.get("audio"):
+                    if not self.store.session(sid)["turn_id"]:
+                        self.store.update_session(sid, status="transcribing")
+                        self.live[sid] = {
+                            "text": "",
+                            "activity": "Transcribing",
+                            "started": time.time(),
+                            "summaries": {},
+                        }
+                    task = asyncio.current_task()
+                    assert task is not None
+                    self.preprocessing[sid] = task
+                    try:
+                        for index, path in enumerate(p["audio"]):
+                            cached = self.store.one(
+                                "SELECT payload FROM events WHERE session_id=? AND kind='transcription' "
+                                "AND json_extract(payload,'$.request_id')=? "
+                                "AND json_extract(payload,'$.audio_index')=?",
+                                (sid, rid, index),
+                            )
+                            result = (
+                                json.loads(cached["payload"])
+                                if cached
+                                else await self.speech.transcribe(path)
+                            )
+                            if not cached:
+                                self.store.event(
+                                    sid,
+                                    "transcription",
+                                    {
+                                        **result,
+                                        "request_id": rid,
+                                        "audio_index": index,
+                                    },
+                                )
+                            transcripts.append(result["text"])
+                    finally:
+                        self.preprocessing.pop(sid, None)
+                s = await self.ensure_thread(sid)
+                if not s["turn_id"]:
+                    self.store.update_session(sid, status="connecting")
+                    self.live.setdefault(sid, {"text": "", "started": time.time()})["activity"] = "Connecting"
                 inputs = [{"type": "text", "text": p["text"]}] if p.get("text") else []
+                inputs += [{"type": "text", "text": text} for text in transcripts]
                 inputs += [{"type": "localImage", "path": x} for x in p.get("images", [])]
                 self.store.request_state(rid, "dispatching")
                 dispatched = True
@@ -172,7 +226,7 @@ class Engine:
             except Exception as exc:
                 uncertain = dispatched and isinstance(exc, (UnknownOutcome, ConnectionError, TimeoutError))
                 self.store.request_state(rid, "uncertain" if uncertain else "failed")
-                if self.store.session(sid)["status"] == "connecting":
+                if self.store.session(sid)["status"] in {"connecting", "transcribing"}:
                     self.store.update_session(sid, status="uncertain" if uncertain else "failed")
                     self.live.pop(sid, None)
                 message = (
@@ -348,6 +402,22 @@ class Engine:
         return {"ok": True}
 
     async def stop(self, sid: str) -> dict:
+        # Cancel local preprocessing before waiting on the per-session dispatch lock.
+        task = self.preprocessing.get(sid)
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE requests SET state='cancelled' WHERE session_id=? AND state='queued'", (sid,)
+            )
+        if task:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if self.store.session(sid)["status"] == "transcribing":
+            if not self.store.session(sid)["turn_id"]:
+                self.store.update_session(sid, status="interrupted")
+                self.live.pop(sid, None)
+                self.store.event(
+                    sid, "completed", {"status": "interrupted", "text": "Voice processing stopped."}
+                )
         async with self.locks[sid]:
             s = self.store.session(sid)
             if s["turn_id"]:

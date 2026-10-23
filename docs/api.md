@@ -7,7 +7,7 @@ Core share this contract, not implementation imports or a third package.
 - GET/POST /projects: registered host directories with stable id/name/path.
 - GET/POST /sessions: scoped native session metadata; cwd is a host directory.
 - POST /messages: stable request_id, session_id, original text and local image
-  host paths. Reuse requires identical target/payload. HTTP 503 means input is
+  host paths, plus optional audio (one local recording path). Reuse requires identical target/payload. HTTP 503 means input is
   retained for retry; unknown execution outcomes must not be blindly replayed.
 - GET /sessions/{id}, /conversation, /details, /history and /questions: metadata,
   complete exchange cursors, timestamps/storage, recent export and pending native
@@ -33,3 +33,11 @@ reference: https://learn.chatgpt.com/docs/app-server#item-deltas.
 
 GET /sessions also returns nullable last_response for compact response ages.
 It is derived from completed message events, excluding commentary.
+
+Voice support is additive in v1: audio defaults to an empty list. Original user
+events retain audio paths. A transcription event carries request_id, audio_index,
+text, language and measured duration_seconds/wall_seconds/cpu_seconds/peak_rss_mib.
+Conversation replies include transcriptions matched to the original request even
+if later inputs arrived before recognition finished. Clients display transcripts
+as user input. Session status transcribing and live activity Transcribing indicate
+local preprocessing; the native agent has not received that voice input yet.
