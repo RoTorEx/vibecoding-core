@@ -37,14 +37,15 @@ make status/logs/stop operate only this Compose project. Never use a global
 Docker prune or restart unrelated services.
 
 make deploy-bot checks/builds that repository and replaces only bot with
---no-deps. The operation verifies Core container identity. make rollback restores
-the previous bot image. make deploy-core schedules a durable host task after
+--no-deps. The operation verifies Core container identity. make rollback rebuilds the recorded previous bot revision from its Git archive
+and replaces the single installed image. make deploy-core schedules a durable host task after
 building; the task drains/waits for idle and activates Core. Scheduling success
 is not activation proof; inspect its unit journal and /health revision.
 
 The bootstrap/migration must stop the old bot poller and old Core writer before
-starting their replacements. The shared process locks are retained. Preserve
-legacy releases/configuration and staged backups until post-cutover verification.
+starting their replacements. The shared process locks are retained. Preserve private configuration and
+data recovery snapshots; remove obsolete executable copies after cutover
+verification.
 A rollback stops the two containers before reactivating legacy writers; never
 start both implementations over the same SQLite state.
 
@@ -58,11 +59,21 @@ and build caches, logs and runtime helper links are excluded.
 
 After migration, run scripts/install_operations.py --root <workspace> as alex
 to install the remote-vibecoding CLI and snapshot timer. Disable the legacy
-snapshot timer only after its replacement is ready. The old snapshot selection
+snapshot timer only after its replacement is ready. The CLI, snapshot timer and
+scheduled updates use the single reviewed scripts/ops.py in this checkout,
+without per-revision worker directories. Installation removes known legacy worker
+copies once no in-flight update needs them. The old snapshot selection
 path is intentionally retained for the existing offsite backup service.
 
+Successful activation prunes obsolete component images through the existing
+host-maintenance helper. These repositories are excluded from its automatic
+timer because a built Core candidate can wait for idle; only post-activation
+scoped cleanup removes their old images. Git owns history, and rollback rebuilds
+the requested revision without another persistent checkout.
+
 The hourly host snapshot job calls the Core container; it does not add a third
-application container. Existing backup-service registration/retention continues
+application container. A held snapshot lock defers the duplicate attempt
+successfully and preserves the last complete archive. Existing backup-service registration/retention continues
 to select the same snapshot files. The owner declined Google OAuth changes.
 Archives contain sensitive bot/native/executor credentials and must stay private.
 

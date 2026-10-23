@@ -2,9 +2,12 @@
 """Install host CLI and snapshot timer after Compose migration succeeds."""
 
 import argparse
+import json
 import os
 import pwd
+import re
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -20,11 +23,9 @@ def main():
         raise ValueError("Run as the developer account")
     repo = root / "vibecoding-core"
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-    worker = Path.home() / ".local/share/remote-vibecoding/ops" / revision / "ops.py"
-    worker.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if not worker.exists():
-        worker.write_bytes(subprocess.check_output(["git", "show", revision + ":scripts/ops.py"], cwd=repo))
-        worker.chmod(0o700)
+    worker = repo / "scripts/ops.py"
+    if not worker.is_file():
+        raise ValueError("The reviewed operations script is missing")
     units = {
         "remote-vibecoding-snapshot.service": f"""[Unit]
 Description=Remote Vibecoding private consistent snapshot
@@ -72,7 +73,28 @@ WantedBy=timers.target
     subprocess.run(
         ["sudo", "-n", "systemctl", "enable", "--now", "remote-vibecoding-snapshot.timer"], check=True
     )
-    print("Host CLI and hourly snapshot timer installed")
+    pending = json.loads(
+        subprocess.check_output(
+            ["sudo", "-n", "systemctl", "list-units", "--all", "--output=json", "remote-vibecoding-update-*"],
+            text=True,
+        )
+    )
+    active = any(row.get("active") in ("active", "activating", "reloading") for row in pending)
+    legacy = Path.home() / ".local/share/remote-vibecoding/ops"
+    if legacy.is_dir() and not legacy.is_symlink() and not active:
+        for directory in legacy.iterdir():
+            if (
+                re.fullmatch(r"[0-9a-f]{40}", directory.name)
+                and directory.is_dir()
+                and not directory.is_symlink()
+                and {item.name for item in directory.iterdir()} <= {"ops.py", "__pycache__"}
+            ):
+                shutil.rmtree(directory)
+        if not any(legacy.iterdir()):
+            legacy.rmdir()
+    print("Host CLI and hourly snapshot timer installed at source revision " + revision)
+    if active:
+        print("Legacy worker cleanup deferred until the in-flight update finishes")
 
 
 if __name__ == "__main__":

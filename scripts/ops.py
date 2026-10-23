@@ -9,6 +9,7 @@ import http.client
 import json
 import os
 import pwd
+import re
 import socket
 import subprocess
 import time
@@ -127,6 +128,41 @@ class Operations:
         self.compose(["build", component], {component.upper() + "_REVISION": revision})
         return revision
 
+    def rebuild(self, component, revision):
+        """Rebuild a recorded revision without another persistent source checkout."""
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise ValueError("Rollback requires a complete recorded Git revision")
+        repo = self.root / ("vibecoding-core" if component == "core" else "telegram-vibecoding")
+        probe = subprocess.run(
+            ["git", "cat-file", "-e", revision + "^{commit}"],
+            cwd=repo,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if probe.returncode:
+            run(["git", "fetch", "origin", revision], cwd=repo)
+        source = subprocess.check_output(["git", "archive", "--format=tar", revision], cwd=repo)
+        command = [
+            "sudo",
+            "-n",
+            "docker",
+            "build",
+            "--tag",
+            "remote-vibecoding-" + component + ":" + revision,
+        ]
+        for key in ("APP_UID", "APP_GID", "APP_HOME"):
+            command.extend(["--build-arg", key + "=" + self.values[key]])
+        command.extend(["--build-arg", "REVISION=" + revision, "-"])
+        subprocess.run(command, input=source, check=True)
+
+    def cleanup_images(self, component):
+        helper = Path("/usr/local/sbin/prune-service-images")
+        if helper.is_file():
+            try:
+                run(["sudo", "-n", str(helper), "--apply", "--repository", "remote-vibecoding-" + component])
+            except subprocess.CalledProcessError:
+                print("Deployment is healthy but obsolete-image cleanup failed")
+
     def activate(self, component, revision):
         key = component.upper() + "_REVISION"
         old = self.image_revision(component)
@@ -148,13 +184,11 @@ class Operations:
         history = json.loads(record.read_text()) if record.exists() else {}
         history[component] = {"current": revision, "previous": old}
         atomic_text(record, json.dumps(history, indent=2) + "\n")
+        self.cleanup_images(component)
 
     def schedule_core(self, revision):
         repo = self.root / "vibecoding-core"
-        content = run(["git", "show", revision + ":scripts/ops.py"], cwd=repo, capture_output=True).stdout
-        worker = Path(self.values["APP_HOME"]) / ".local/share/remote-vibecoding/ops" / revision / "ops.py"
-        if not worker.exists():
-            atomic_text(worker, content, mode=0o700)
+        worker = repo / "scripts/ops.py"
         unit = "remote-vibecoding-update-" + str(time.time_ns())
         user = pwd.getpwuid(os.getuid()).pw_name
         run(
@@ -204,7 +238,11 @@ class Operations:
         output = self.state / "snapshots"
         output.mkdir(parents=True, exist_ok=True, mode=0o700)
         with (output / "snapshot.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("Snapshot deferred while another snapshot is running; previous copy retained")
+                return
             target = output / "next.tar.gz"
             checksum = output / "next.tar.gz.sha256"
             target.unlink(missing_ok=True)
@@ -293,6 +331,7 @@ def main():
                 previous = state.get("bot", {}).get("previous")
                 if not previous:
                     raise ValueError("No previous container image is recorded")
+                operations.rebuild("bot", previous)
                 operations.activate("bot", previous)
 
 

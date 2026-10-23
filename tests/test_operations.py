@@ -68,3 +68,70 @@ def test_core_update_waits_for_active_work_then_releases_drain(operations, monke
     operations.apply_core("core-new")
     assert calls.index(("activate", ("core", "core-new"))) > calls.index(("/drain", {"enabled": True}))
     assert calls[-1] == ("/drain", {"enabled": False})
+
+
+def test_scheduled_worker_uses_one_stable_source_path(operations, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ops, "run", lambda argv, **kwargs: calls.append(argv))
+    operations.schedule_core("a" * 40)
+    assert str(operations.root / "vibecoding-core/scripts/ops.py") in calls[0]
+    assert not (operations.private.parent.parent / "share/remote-vibecoding/ops").exists()
+
+
+def test_duplicate_snapshot_defers_and_preserves_previous_copy(operations, capsys):
+    operations.api = lambda path: {"accepting": True, "busy": False, "pending_requests": 0}
+    output = operations.state / "snapshots"
+    output.mkdir(parents=True)
+    (output / "latest.tar.gz").write_bytes(b"previous verified copy")
+    with (output / "snapshot.lock").open("a") as lock:
+        ops.fcntl.flock(lock, ops.fcntl.LOCK_EX | ops.fcntl.LOCK_NB)
+        operations.snapshot()
+    assert (output / "latest.tar.gz").read_bytes() == b"previous verified copy"
+    assert "Snapshot deferred" in capsys.readouterr().out
+
+
+def test_rollback_rebuild_streams_only_the_requested_git_source(operations, monkeypatch):
+    import io
+    import subprocess
+    import tarfile
+
+    repo = operations.root / "telegram-vibecoding"
+    repo.mkdir()
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    (repo / "Dockerfile").write_text("FROM scratch\n")
+    (repo / "source.txt").write_text("recorded source")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    (repo / "source.txt").write_text("working changes to preserve")
+    operations.values.update(APP_UID="1002", APP_GID="1002")
+    original = subprocess.run
+    builds = []
+
+    def run(argv, **kwargs):
+        if argv[:3] == ["sudo", "-n", "docker"]:
+            builds.append((argv, kwargs["input"]))
+            return subprocess.CompletedProcess(argv, 0)
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(ops.subprocess, "run", run)
+    operations.rebuild("bot", revision)
+    assert (repo / "source.txt").read_text() == "working changes to preserve"
+    with tarfile.open(fileobj=io.BytesIO(builds[0][1])) as archive:
+        assert archive.extractfile("source.txt").read() == b"recorded source"
+        assert not any(name.startswith(".git/") for name in archive.getnames())
+    assert "remote-vibecoding-bot:" + revision in builds[0][0]
