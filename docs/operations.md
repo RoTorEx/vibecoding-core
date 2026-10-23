@@ -57,6 +57,11 @@ From a clean source checkout, run `make deploy-bot`. It runs checks, stages the
 exact commit in a new release/virtual environment, atomically switches only the
 bot link, restarts only the bot, verifies service state and preserves the prior
 link. A failed deployment restores the previous link. The engine stays running.
+Across incompatible UI schema versions, deployment stops only the bot and clears
+its FSM before starting the selected code. Selection, captured input, delivery
+queues, native conversations and files remain. The replacement Main Deck is
+published directly; `/menu` also opens it. Telegram command descriptions are
+updated in default and owner-chat scopes, including English and Russian locales.
 
 `make deploy-engine` starts a separate durable systemd update task. It waits for
 active turns and accepted requests to finish while input is temporarily drained.
@@ -102,8 +107,11 @@ are verified. Old copies survive an unsuccessful refresh. Check freshness
 before departure; continuous activity can defer refreshes. Preserve the backup
 service's credential store and established retention.
 
-GitHub onboarding uses a separate developer SSH key. In the initial deployment
-an administrator cloned the private source through the existing trusted root
-transport, without copying that key. Register the new developer public key in
-RoTorEx and authenticate GitHub CLI before relying on unattended Git pushes or
-new private clones as alex. Do not weaken host-key checking to bypass setup.
+The developer key `/home/alex/.ssh/id_ed25519_codex_relay` is registered as a
+write-enabled deploy key for RoTorEx/codex-relay, named
+`codex-relay / personal-vps / alex`. Normal alex fetch, safe pull and push
+authentication have been verified without root's SSH transport. Git author
+identity is configured. This key is scoped to that repository; GitHub CLI API
+commands and other private repositories need separate authentication. The initial
+administrator bootstrap transport was not installed as a permanent fallback.
+Do not weaken host-key checking or copy broader credentials to bypass setup.

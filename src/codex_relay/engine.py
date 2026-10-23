@@ -5,6 +5,7 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 import signal
 import time
 from collections import defaultdict
@@ -48,6 +49,8 @@ class Engine:
     def start(self) -> None:
         self.store.recover()
         self.store.register_project("Home", str(Path.home()))
+        for row in self.store.rows("SELECT DISTINCT cwd FROM sessions"):
+            self.store.register_session_location(Path(row["cwd"]))
         for row in self.store.rows("SELECT * FROM requests WHERE state='queued' ORDER BY created"):
             self.spawn(self.dispatch(row["id"]))
 
@@ -127,6 +130,20 @@ class Engine:
                 }
                 if s["model"]:
                     start_params["model"] = s["model"]
+                model = s["model"]
+                if not model:
+                    catalog = (await self.client.request("model/list", {})).get("data", [])
+                    default = next((m for m in catalog if m.get("isDefault")), catalog[0] if catalog else {})
+                    model = default.get("model") or default.get("id")
+                if model:
+                    start_params["collaborationMode"] = {
+                        "mode": s["collaboration_mode"],
+                        "settings": {
+                            "model": model,
+                            "reasoning_effort": s["effort"],
+                            "developer_instructions": None,
+                        },
+                    }
                 if s["turn_id"]:
                     try:
                         result = await self.client.request(
@@ -188,11 +205,15 @@ class Engine:
                 self.live.setdefault(sid, {"text": ""}).update(activity=activity, updated=time.time())
         elif method == "item/completed":
             item = params.get("item", {})
-            if item.get("type") == "agentMessage":
+            if item.get("type") in {"agentMessage", "plan"}:
                 self.store.event(
                     sid,
                     "message",
-                    {"text": item.get("text", ""), "item_id": item.get("id"), "phase": item.get("phase")},
+                    {
+                        "text": item.get("text", ""),
+                        "item_id": item.get("id"),
+                        "phase": "plan" if item.get("type") == "plan" else item.get("phase"),
+                    },
                 )
                 if sid in self.live:
                     self.live[sid]["text"] = ""
@@ -275,6 +296,14 @@ class Engine:
         with self.store.db:
             self.store.db.execute("UPDATE questions SET status='resolved' WHERE id=?", (qid,))
         self.store.update_session(q["session_id"], status="working")
+        self.store.event(
+            q["session_id"],
+            "user",
+            {
+                "text": "\n\n".join(str(v) for v in answers.values()),
+                "question_id": qid,
+            },
+        )
         return {"ok": True}
 
     async def stop(self, sid: str) -> dict:
@@ -320,7 +349,7 @@ class Engine:
                     await self.client.request("thread/unarchive", {"threadId": s["thread_id"]})
                 self.store.update_session(sid, archived=0)
             elif action == "settings":
-                if s["turn_id"]:
+                if s["turn_id"] and "cwd" in body:
                     raise ValueError("Wait for the current turn before changing its model or folder")
                 values = {}
                 if "cwd" in body:
@@ -333,6 +362,12 @@ class Engine:
                     models = (await self.client.request("model/list", {})).get("data", [])
                     model = body.get("model", s["model"])
                     selected = next((m for m in models if m["id"] == model or m.get("model") == model), None)
+                    if model is None:
+                        selected = next(
+                            (m for m in models if m.get("isDefault")), models[0] if models else None
+                        )
+                        if selected:
+                            model = selected.get("model") or selected["id"]
                     if not selected:
                         raise ValueError("Choose a model from the live catalog")
                     effort = body.get("effort", s["effort"])
@@ -340,8 +375,13 @@ class Engine:
                     if options and effort not in options:
                         raise ValueError("Reasoning effort is not supported by this model")
                     values.update(model=model, effort=effort)
+                if "collaboration_mode" in body:
+                    if body["collaboration_mode"] not in {"default", "plan"}:
+                        raise ValueError("Choose Default or Plan mode")
+                    values["collaboration_mode"] = body["collaboration_mode"]
                 self.store.update_session(sid, **values)
-                self.loaded.pop(sid, None)
+                if "cwd" in values:
+                    self.loaded.pop(sid, None)
             else:
                 raise ValueError("Unsupported session action")
             return self.store.session(sid)
@@ -437,6 +477,13 @@ def application(engine: Engine) -> web.Application:
                 data = engine.store.session(sid)
             elif parts[2] == "history":
                 data = engine.store.history(sid)
+            elif parts[2] == "conversation":
+                anchor = request.query.get("anchor")
+                data = engine.store.conversation(sid, int(anchor) if anchor else None)
+            elif parts[2] == "details":
+                data = engine.store.details(sid)
+                usage = shutil.disk_usage(data["cwd"] if Path(data["cwd"]).exists() else Path.home())
+                data.update(host_id=engine.settings.host_id, disk_free=usage.free, disk_total=usage.total)
             elif parts[2] == "questions":
                 data = [
                     {**q, "payload": json.loads(q["payload"])}

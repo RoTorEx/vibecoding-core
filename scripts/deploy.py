@@ -59,6 +59,34 @@ def switch(link: Path, target: Path):
     temporary.replace(link)
 
 
+def bot_database() -> Path:
+    config = Path(os.environ.get("CODEX_RELAY_CONFIG", "~/.config/codex-relay/config.toml")).expanduser()
+    values = tomllib.loads(config.read_text()) if config.exists() else {}
+    return Path(values.get("data_dir", "~/.local/state/codex-relay")).expanduser() / "bot.db"
+
+
+def restart(component: str, release: Path, runner):
+    unit = "codex-relay-" + component
+    database = bot_database()
+    if component == "bot" and database.exists():
+        marker = release / ".relay-ui-version"
+        expected = marker.read_text().strip() if marker.exists() else "1"
+        with contextlib.closing(sqlite3.connect(database)) as db:
+            row = db.execute("SELECT value FROM meta WHERE key='ui_version'").fetchone()
+        if (row[0] if row else "1") != expected:
+            # Reset incompatible navigation only while its sole writer is stopped.
+            runner(["sudo", "-n", "systemctl", "stop", unit])
+            with contextlib.closing(sqlite3.connect(database)) as db, db:
+                db.execute("DELETE FROM meta WHERE key LIKE 'fsm:%'")
+                db.executemany(
+                    "INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)",
+                    [("ui_version", expected), ("screen", ""), ("mode", "menu"), ("input_action", "")],
+                )
+            runner(["sudo", "-n", "systemctl", "start", unit])
+            return
+    runner(["sudo", "-n", "systemctl", "restart", unit])
+
+
 def activate(component: str, release: Path, root: Path, runner=run, verify=None):
     if component not in {"bot", "engine"}:
         raise ValueError("Unknown deployment component")
@@ -67,7 +95,7 @@ def activate(component: str, release: Path, root: Path, runner=run, verify=None)
     switch(link, release)
     unit = "codex-relay-" + component
     try:
-        runner(["sudo", "-n", "systemctl", "restart", unit])
+        restart(component, release, runner)
         if verify:
             verify()
         else:
@@ -98,7 +126,7 @@ def activate(component: str, release: Path, root: Path, runner=run, verify=None)
     except BaseException:
         if previous:
             switch(link, previous)
-            runner(["sudo", "-n", "systemctl", "restart", unit])
+            restart(component, previous, runner)
         else:
             link.unlink(missing_ok=True)
         raise

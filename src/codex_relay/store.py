@@ -65,7 +65,15 @@ class EngineStore(Database):
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
                 rpc_id TEXT NOT NULL, method TEXT NOT NULL, payload TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending');
+            CREATE INDEX IF NOT EXISTS events_session_kind_id ON events(session_id,kind,id);
         """)
+
+        columns = {r[1] for r in self.db.execute("PRAGMA table_info(sessions)")}
+        if "collaboration_mode" not in columns:
+            with self.db:
+                self.db.execute(
+                    "ALTER TABLE sessions ADD COLUMN collaboration_mode TEXT NOT NULL DEFAULT 'default'"
+                )
 
     def register_project(self, name: str, path: str) -> dict:
         resolved = Path(path).expanduser().resolve(strict=True)
@@ -86,6 +94,7 @@ class EngineStore(Database):
         path = Path(cwd).expanduser().resolve(strict=True)
         if not path.is_dir():
             raise ValueError("Working directory is not a directory")
+        self.register_session_location(path)
         sid = identifier()
         now = time.time()
         with self.db:
@@ -95,6 +104,10 @@ class EngineStore(Database):
                 (sid, name.strip() or "New session", str(path), effort, model, now, now),
             )
         return self.session(sid)
+
+    def register_session_location(self, path: Path):
+        if path.is_dir() and not self.one("SELECT id FROM projects WHERE path=?", (str(path),)):
+            self.register_project("Home" if path == Path.home() else path.name or "/", str(path))
 
     def session(self, sid: str) -> dict:
         value = self.one("SELECT * FROM sessions WHERE id=?", (sid,))
@@ -106,7 +119,17 @@ class EngineStore(Database):
         return self.rows("SELECT * FROM sessions WHERE archived=? ORDER BY updated DESC", (int(archived),))
 
     def update_session(self, sid: str, **values) -> None:
-        if set(values) - {"name", "cwd", "thread_id", "turn_id", "status", "archived", "model", "effort"}:
+        if set(values) - {
+            "name",
+            "cwd",
+            "thread_id",
+            "turn_id",
+            "status",
+            "archived",
+            "model",
+            "effort",
+            "collaboration_mode",
+        }:
             raise ValueError("Unsupported session field")
         values["updated"] = time.time()
         with self.db:
@@ -139,6 +162,55 @@ class EngineStore(Database):
                 (sid,),
             )
         ]
+
+    def conversation(self, sid: str, anchor: int | None = None) -> dict:
+        """Read one request and its replies, with stable cursors across all retained history."""
+        self.session(sid)
+        user = self.one(
+            "SELECT * FROM events WHERE session_id=? AND kind='user' "
+            + ("AND id=? " if anchor is not None else "")
+            + "ORDER BY id DESC LIMIT 1",
+            (sid, anchor) if anchor is not None else (sid,),
+        )
+        if not user:
+            return {"user": None, "replies": [], "previous": None, "next": None, "index": 0, "total": 0}
+        previous = self.one(
+            "SELECT id FROM events WHERE session_id=? AND kind='user' AND id<? ORDER BY id DESC LIMIT 1",
+            (sid, user["id"]),
+        )
+        following = self.one(
+            "SELECT id FROM events WHERE session_id=? AND kind='user' AND id>? ORDER BY id LIMIT 1",
+            (sid, user["id"]),
+        )
+        replies = self.rows(
+            "SELECT * FROM events WHERE session_id=? AND id>? AND id<? "
+            "AND kind IN ('message','error','completed','question') ORDER BY id",
+            (sid, user["id"], following["id"] if following else 9223372036854775807),
+        )
+        counts = self.one(
+            "SELECT COUNT(*) AS total, SUM(id<=?) AS position FROM events WHERE session_id=? AND kind='user'",
+            (user["id"], sid),
+        )
+        assert counts is not None
+        return {
+            "user": {**user, "payload": json.loads(user["payload"])},
+            "replies": [{**r, "payload": json.loads(r["payload"])} for r in replies],
+            "previous": previous["id"] if previous else None,
+            "next": following["id"] if following else None,
+            "index": counts["position"],
+            "total": counts["total"],
+        }
+
+    def details(self, sid: str) -> dict:
+        session = self.session(sid)
+        stamps = self.one(
+            "SELECT MAX(CASE WHEN kind='user' THEN created END) AS last_request, "
+            "MAX(CASE WHEN kind='message' THEN created END) AS last_response, "
+            "MAX(CASE WHEN kind='completed' THEN created END) AS last_finished "
+            "FROM events WHERE session_id=?",
+            (sid,),
+        )
+        return {**session, **(stamps or {})}
 
     def accept(self, rid: str, sid: str, payload: dict) -> bool:
         with self.db:

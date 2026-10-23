@@ -1,9 +1,9 @@
-# VPS deployment evidence
+# Deployment evidence
 
 Observed on 2026-10-23 in Europe/Warsaw. These are bounded acceptance results,
 not a claim that every native Codex feature or failure mode is supported.
 
-## Installed result
+## Initial installed result
 
 - Private bot: [GardenSandbox_bot](https://t.me/GardenSandbox_bot).
 - Private source: [RoTorEx/codex-relay](https://github.com/RoTorEx/codex-relay).
@@ -73,22 +73,33 @@ an unattended whole-host disaster recovery remain untested.
 
 ## Remaining owner steps and limits
 
-1. Phone acceptance: open the bot, send `/menu`, choose New session → Codex Relay,
-   send a task, navigate to Deck and return, then send an image with a caption.
-   No owner input was recorded in the durable Telegram inbox at final verification;
-   outbound delivery and automated UI tests do not replace this check.
-2. GitHub: add `/home/alex/.ssh/id_ed25519_codex_relay.pub` to RoTorEx as an
-   authentication key. The prepared key currently receives `Permission denied
-   (publickey)`. Local gh lacks admin:public_key; the remote device login expired.
-   Git author identity is configured. The operator synchronized this initial
-   checkout with the existing root GitHub transport through per-command sudo,
-   without copying the root private key or installing a permanent fallback.
-   Independent private clone/push and GitHub CLI authentication as alex remain
-   incomplete until onboarding finishes.
-3. Revoke/replace and reauthorize the backup-service Google OAuth credential
-   exposed in earlier audit tool output. This requires the owner's personal
-   Google browser flow and coordinated replacement on its consumers. The working
-   credential was not silently revoked; existing backups continue to work.
+Phone acceptance remains open: the owner tried the original navigation and could
+not understand the path. Automated routing tests do not establish usability.
+The replacement path is Main Deck → Location → a numbered directory → a session.
+
+The prepared VPS key is now a verified read/write repository deploy key, ID
+167418103, named `codex-relay / personal-vps / alex`. SSH identified the intended
+repository; normal alex fetch, safe pull and push dry-run succeeded without root
+transport. It grants this repository's Git operations, not account-wide access
+or GitHub API authentication. Other private repositories need separate access.
+
+The earlier audit output contained client_id, client_secret and refresh_token
+from the existing personal-backups Drive OAuth file. The owner explicitly
+declined changes after being informed; no replacement, revocation or Google
+reauthorization is pending in this task. Credential values are not repeated.
+
+## Location-first UI source verification
+
+The revised source passes 40 tests, Ruff, formatting, mypy and CLI checks.
+Actual aiogram-dialog callbacks exercise primary Settings, numbered Location
+pages, directory-scoped session/archive lists, a paired Deck/Back footer,
+Config reasoning cycles and native Plan controls, model selection, Details,
+rename/cancel and session closure/reopening. Repeated /start and /menu reuse
+the current panel. Tests also cover long Unicode replies without lost text,
+history beyond 200 events, native questions and retained answers, bot restart,
+failed Telegram edit retry, additive database migration and UI-schema rollback
+without dropping captured input or delivery state. Installed revision/readback
+evidence for this UI is recorded after deployment below.
 
 Prepare independent phone SSH access before departure. The shared VPS has two
 vCPUs and 3.7 GiB RAM; the final resource sample had about 1.6 GiB available RAM

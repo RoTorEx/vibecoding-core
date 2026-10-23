@@ -166,3 +166,76 @@ async def test_explicit_no_active_turn_rejection_starts_once_but_unknown_outcome
     assert len(starts) == 2
     assert starts[-1]["input"] == [{"type": "text", "text": "second"}]
     assert engine.store.request("race-followup")["state"] == "accepted"
+
+
+async def test_plan_mode_uses_native_settings_and_can_change_for_next_turn(host):
+    settings, engine, native, client = host
+    s = await new(host)
+    await client.call("/sessions/" + s["id"] + "/settings", {"collaboration_mode": "plan"})
+    await client.call(
+        "/messages", {"request_id": "plan", "session_id": s["id"], "text": "Original plan request"}
+    )
+    await settle(engine)
+    params = next(p for m, p in native.calls if m == "turn/start")
+    assert params["input"] == [{"type": "text", "text": "Original plan request"}]
+    assert params["collaborationMode"] == {
+        "mode": "plan",
+        "settings": {"model": "test-model", "reasoning_effort": "medium", "developer_instructions": None},
+    }
+    active = engine.store.session(s["id"])
+    await client.call(
+        "/sessions/" + s["id"] + "/settings", {"collaboration_mode": "default", "effort": "high"}
+    )
+    assert engine.store.session(s["id"])["turn_id"] == active["turn_id"]
+    native.finish(active["thread_id"])
+    await client.call("/messages", {"request_id": "execute", "session_id": s["id"], "text": "Continue"})
+    await settle(engine)
+    params = [p for m, p in native.calls if m == "turn/start"][-1]
+    assert params["collaborationMode"]["mode"] == "default"
+    assert params["collaborationMode"]["settings"]["reasoning_effort"] == "high"
+
+
+async def test_conversation_cursors_reach_old_history_and_details_track_events(host):
+    settings, engine, native, client = host
+    s = await new(host)
+    first = None
+    for i in range(220):
+        eid = engine.store.event(s["id"], "user", {"text": f"Request {i}"})
+        first = first or eid
+        engine.store.event(s["id"], "message", {"text": f"Answer {i}"})
+        engine.store.event(s["id"], "completed", {"status": "completed"})
+    latest = await client.call("/sessions/" + s["id"] + "/conversation")
+    assert latest["index"] == latest["total"] == 220
+    assert latest["user"]["payload"]["text"] == "Request 219"
+    oldest = await client.call(f"/sessions/{s['id']}/conversation?anchor={first}")
+    assert oldest["previous"] is None and oldest["next"] is not None
+    assert oldest["replies"][0]["payload"]["text"] == "Answer 0"
+    details = await client.call("/sessions/" + s["id"] + "/details")
+    assert (
+        details["created"] <= details["last_request"] <= details["last_response"] <= details["last_finished"]
+    )
+    assert details["disk_total"] >= details["disk_free"] > 0
+
+
+def test_old_session_schema_migrates_without_losing_identity_or_events(tmp_path):
+    import sqlite3
+
+    from codex_relay.store import EngineStore
+
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+            CREATE TABLE sessions(
+                id TEXT PRIMARY KEY,name TEXT,cwd TEXT,thread_id TEXT,turn_id TEXT,status TEXT,
+                archived INTEGER,model TEXT,effort TEXT,created REAL,updated REAL);
+            INSERT INTO sessions VALUES('original','Kept','/home/alex','native-id',NULL,'idle',0,NULL,'medium',1,2);
+        """)
+    store = EngineStore(path)
+    assert store.session("original")["thread_id"] == "native-id"
+    assert store.session("original")["collaboration_mode"] == "default"
+    store.event("original", "user", {"text": "kept"})
+    store.close()
+    store = EngineStore(path)
+    assert store.session("original")["name"] == "Kept"
+    assert store.conversation("original")["user"]["payload"]["text"] == "kept"
+    store.close()

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Replace overlapping Projects/Sessions/Actions navigation with a location-first
+  Main Deck, numbered pages, scoped sessions and a consistent Deck/Back footer.
+- Show requests, streaming responses, questions and paginated history in one
+  editable panel. Add inline reasoning/Plan controls, curated model selection,
+  session Details and independent UI upgrade/rollback recovery.
+- Configure the VPS repository deploy key and refresh Telegram command labels.
 - Exclude rebuildable native/plugin caches and operational logs from private
   snapshots while retaining WAL-backed conversation state and source changes.
 - Omit native runtime helper links so recovery archives can be safely extracted

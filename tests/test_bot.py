@@ -124,7 +124,7 @@ async def test_menu_text_does_not_reach_previous_agent(app):
     runtime.capture(update(10, "this is not a prompt"))
     await runtime.process_messages([runtime.store.one("SELECT * FROM inbox WHERE id=10")])
     assert not native.calls
-    assert any(isinstance(m, SendMessage) and "Choose a session" in m.text for m in transport.calls)
+    assert any(isinstance(m, SendMessage) and "Location" in m.text for m in transport.calls)
 
 
 async def test_album_remains_bound_to_first_session(app, host):
@@ -166,7 +166,10 @@ async def test_real_dialog_deck_and_navigation_do_not_start_native_work(app):
     assert messages
     markup = messages[-1].reply_markup
     texts = [b.text for row in markup.inline_keyboard for b in row]
-    assert "💬 Sessions" in texts and "➕ New session" in texts
+    assert [b.text for b in markup.inline_keyboard[0]] == ["⚙️ Settings"]
+    assert "📍 Location" in texts
+    assert "💬 Sessions" not in texts and "➕ New session" not in texts
+    assert [b.text for b in markup.inline_keyboard[-1]] == ["🏠 Deck", "⬅️ Back"]
     assert runtime.store.get("mode") == "menu"
     assert not native.calls
 
@@ -217,10 +220,13 @@ async def test_download_rejects_oversized_and_mislabeled_images(app):
 async def test_session_picker_uses_real_dialog_callbacks(app, host):
     runtime, transport, engine, native = app
     target = engine.store.create_session(str(host[0].development_root.parent), "Pick me", "medium")
+    runtime.store.set("location", target["cwd"])
+    engine.store.register_project("Fixture", target["cwd"])
     runtime.capture(update(70, "/sessions"))
     await runtime.process_control(runtime.store.one("SELECT * FROM inbox WHERE id=70"))
     panel = next(m for m in reversed(transport.calls) if isinstance(m, SendMessage))
-    button = next(b for row in panel.reply_markup.inline_keyboard for b in row if "Pick me" in b.text)
+    assert "1. Pick me" in panel.text
+    button = next(b for row in panel.reply_markup.inline_keyboard for b in row if b.text == "1")
     callback = {
         "update_id": 71,
         "callback_query": {
@@ -282,3 +288,328 @@ async def test_partial_image_file_is_not_reused_as_a_complete_attachment(app):
     from pathlib import Path
 
     assert Path(result).suffix == ".png" and Path(result).read_bytes() == raw
+
+
+def panel(transport):
+    return next(m for m in reversed(transport.calls) if isinstance(m, (SendMessage, EditMessageText)))
+
+
+async def command(app, text):
+    runtime, *_ = app
+    uid = int(runtime.store.get("offset", "1000"))
+    runtime.capture(update(uid, text))
+    row = runtime.store.one("SELECT * FROM inbox WHERE id=?", (uid,))
+    await runtime.process_navigation(row)
+
+
+async def click(app, text):
+    runtime, transport, *_ = app
+    current = panel(transport)
+    button = next(b for row in current.reply_markup.inline_keyboard for b in row if b.text == text)
+    uid = int(runtime.store.get("offset", "1000"))
+    body = {
+        "update_id": uid,
+        "callback_query": {
+            "id": f"cb-{uid}",
+            "chat_instance": "test",
+            "from": {"id": 42, "is_bot": False, "first_name": "Operator"},
+            "data": button.callback_data,
+            "message": {
+                "message_id": int(runtime.store.get("panel_id")),
+                "date": int(time.time()),
+                "chat": {"id": 42, "type": "private"},
+                "from": {"id": 123456, "is_bot": True, "first_name": "Relay"},
+                "text": current.text,
+            },
+        },
+    }
+    runtime.capture(body)
+    await runtime.process_control(runtime.store.one("SELECT * FROM inbox WHERE id=?", (uid,)))
+
+
+def exits(transport):
+    assert [b.text for b in panel(transport).reply_markup.inline_keyboard[-1]] == ["🏠 Deck", "⬅️ Back"]
+
+
+async def test_location_session_config_details_are_one_editable_panel(app):
+    runtime, transport, engine, native = app
+    await command(app, "/start")
+    first_id = runtime.store.get("panel_id")
+    await click(app, "⚙️ Settings")
+    exits(transport)
+    await click(app, "⬅️ Back")
+    await click(app, "📍 Location")
+    assert "1. Home" in panel(transport).text
+    exits(transport)
+    await click(app, "1")
+    assert "No sessions here yet" in panel(transport).text
+    await click(app, "➕ New session")
+    sid = runtime.store.get("selected")
+    assert "Send a message" in panel(transport).text
+    assert not any(m == "turn/start" for m, p in native.calls)
+    await click(app, "⚙️ Config")
+    exits(transport)
+    await click(app, "Reasoning: medium")
+    assert engine.store.session(sid)["effort"] == "high"
+    await click(app, "Reasoning: high")
+    assert engine.store.session(sid)["effort"] == "medium"
+    await click(app, "Plan mode: Off")
+    assert engine.store.session(sid)["collaboration_mode"] == "plan"
+    await click(app, "Model: Test")
+    exits(transport)
+    await click(app, "Test")
+    assert "Config" in panel(transport).text
+    await click(app, "⬅️ Back")
+    assert runtime.store.get("mode") == "chat"
+    await click(app, "ℹ️ Details")
+    assert "Created:" in panel(transport).text and "Last request: —" in panel(transport).text
+    await click(app, "✏️ Rename")
+    exits(transport)
+    await click(app, "⚙️ Config")
+    await click(app, "⬅️ Back")
+    assert runtime.store.get("mode") == "input"
+    await command(app, "A clear session title")
+    assert engine.store.session(sid)["name"] == "A clear session title"
+    assert "Details" in panel(transport).text
+    await click(app, "⬅️ Back")
+    assert "A clear session title" in panel(transport).text
+    await click(app, "🏠 Deck")
+    await click(app, "⬅️ Back")
+    assert "Main Deck" in panel(transport).text
+    assert runtime.store.get("panel_id") == first_id
+    assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+
+
+async def test_stream_delivery_history_and_navigation_preserve_one_panel(app, host):
+    runtime, transport, engine, native = app
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    await click(app, "1")
+    await click(app, "➕ New session")
+    sid = runtime.store.get("selected")
+    first_id = runtime.store.get("panel_id")
+    for index in range(2):
+        uid = 2000 + index
+        runtime.capture(update(uid, f"Original request {index}"))
+        await runtime.process_messages([runtime.store.one("SELECT * FROM inbox WHERE id=?", (uid,))])
+        await settle(engine)
+        session = engine.store.session(sid)
+        await runtime.refresh_panel()
+        assert f"Original request {index}" in panel(transport).text
+        native.finish(session["thread_id"], text=f"Exact native answer {index}")
+        for event in await runtime.engine.call("/events?after=" + runtime.store.get("event_cursor", "0")):
+            runtime.queue_update(event)
+        assert await runtime.deliver_pending()
+        assert f"Exact native answer {index}" in panel(transport).text
+    await click(app, "◀")
+    assert "Original request 0" in panel(transport).text and "Exact native answer 0" in panel(transport).text
+    await click(app, "Latest")
+    assert "Exact native answer 1" in panel(transport).text
+    assert runtime.store.get("panel_id") == first_id
+    assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+    assert runtime.store.one("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'")["n"] == 0
+    # Leaving the session does not stop work or let later output overwrite the menu.
+    runtime.capture(update(2010, "Run"))
+    await runtime.process_messages([runtime.store.one("SELECT * FROM inbox WHERE id=2010")])
+    await settle(engine)
+    await click(app, "🏠 Deck")
+    native.finish(engine.store.session(sid)["thread_id"], text="Background result")
+    for event in await runtime.engine.call("/events?after=" + runtime.store.get("event_cursor", "0")):
+        runtime.queue_update(event)
+    await runtime.deliver_pending()
+    assert "Main Deck" in panel(transport).text
+    assert "Background result" not in panel(transport).text
+    assert not any(m == "turn/interrupt" for m, p in native.calls)
+
+
+async def test_numbered_location_pages_filter_sessions_and_keep_home_first(app, tmp_path):
+    runtime, transport, engine, native = app
+    for i in range(12):
+        folder = tmp_path / f"place-{i:02d}"
+        folder.mkdir()
+        engine.store.register_project(f"Place {i:02d}", str(folder))
+        engine.store.create_session(str(folder), f"Work {i:02d}", "medium")
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    assert "1. Home" in panel(transport).text and "Page 1/2" in panel(transport).text
+    await click(app, "▶")
+    assert "Page 2/2" in panel(transport).text
+    await click(app, "1")
+    assert "Work 09" in panel(transport).text
+    assert "Work 08" not in panel(transport).text
+    exits(transport)
+    await click(app, "1")
+    sid = runtime.store.get("selected")
+    assert engine.store.session(sid)["name"] == "Work 09"
+    await click(app, "ℹ️ Details")
+    await click(app, "🗃 Close session")
+    assert engine.store.session(sid)["archived"] == 1
+    await click(app, "🗃 Archived")
+    assert "Work 09" in panel(transport).text and "Work 08" not in panel(transport).text
+    await click(app, "1")
+    assert engine.store.session(sid)["archived"] == 0
+
+
+async def test_other_location_cancel_and_save_do_not_create_sessions(app, tmp_path):
+    runtime, transport, engine, native = app
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    await click(app, "📂 Other location")
+    assert runtime.store.get("mode") == "input"
+    await click(app, "⬅️ Back")
+    assert runtime.store.get("mode") == "menu"
+    await click(app, "📂 Other location")
+    await command(app, str(tmp_path))
+    assert runtime.store.get("location") == str(tmp_path)
+    assert "No sessions here" in panel(transport).text
+    assert engine.store.sessions() == []
+    assert not any(m == "turn/start" for m, p in native.calls)
+
+
+async def test_panel_state_survives_runtime_restart_and_native_questions_stay_in_panel(app):
+    runtime, transport, engine, native = app
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    await click(app, "1")
+    await click(app, "➕ New session")
+    sid = runtime.store.get("selected")
+    uid = 4000
+    runtime.capture(update(uid, "Plan this"))
+    await runtime.process_messages([runtime.store.one("SELECT * FROM inbox WHERE id=?", (uid,))])
+    await settle(engine)
+    session = engine.store.session(sid)
+    engine.on_request(
+        77,
+        "item/tool/requestUserInput",
+        {
+            "threadId": session["thread_id"],
+            "questions": [
+                {
+                    "id": "goal",
+                    "question": "Which direction?",
+                    "options": [
+                        {"label": "Simple", "description": "Keep the workflow small"},
+                        {"label": "Advanced", "description": "Add more settings"},
+                    ],
+                }
+            ],
+        },
+    )
+    await runtime.refresh_panel()
+    assert "Which direction?" in panel(transport).text
+    await click(app, "Simple")
+    assert native.calls[-1][0] == "response"
+    first_id = runtime.store.get("panel_id")
+    replacement = BotRuntime(runtime.settings, bot=runtime.bot, engine=runtime.engine)
+    replacement.throttle = runtime.throttle
+    try:
+        assert replacement.store.get("selected") == sid
+        assert await replacement.refresh_panel()
+        assert replacement.store.get("panel_id") == first_id
+        assert "Simple" in panel(transport).text
+    finally:
+        replacement.store.close()
+    assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+
+
+async def test_invalid_location_is_an_inline_error_with_back_and_retry(app, tmp_path):
+    runtime, transport, engine, native = app
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    await click(app, "📂 Other location")
+    await command(app, "relative/path")
+    assert "absolute" in panel(transport).text
+    exits(transport)
+    assert runtime.store.get("mode") == "input"
+    await command(app, str(tmp_path))
+    assert runtime.store.get("location") == str(tmp_path)
+    assert "absolute" not in panel(transport).text
+    assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+
+
+def test_curated_model_selection_and_long_conversation_parts_are_lossless():
+    from codex_relay.presentation import conversation_parts, curated_models
+
+    ids = ["gpt-6-sol", "gpt-6-astra", "gpt-5.6-astra", "gpt-6.1-sol", "gpt-5.1-astra", "gpt-6-luna"]
+    assert [m["id"] for m in curated_models([{"id": mid} for mid in ids])] == [
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+        "gpt-5.6-astra",
+    ]
+    fence = chr(96) * 3
+    text = ("Привет 🚀\n" + fence + "python\nprint('kept')\n" + fence) * 500
+    parts = conversation_parts(
+        {
+            "user": {"payload": {"text": "Original prompt", "images": []}},
+            "replies": [{"kind": "message", "payload": {"text": text}}],
+        }
+    )
+    assert "".join(parts) == "You\nOriginal prompt\n\nCodex\n" + text
+    assert all(len(p.encode("utf-16-le")) // 2 <= 3200 for p in parts)
+
+
+async def test_server_publishes_fresh_deck_and_repeated_start_reuses_it(app):
+    runtime, transport, engine, native = app
+    await runtime.initialize_panel()
+    first = runtime.store.get("panel_id")
+    assert "Main Deck" in panel(transport).text
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    await command(app, "/menu")
+    assert "Main Deck" in panel(transport).text
+    assert runtime.store.get("panel_id") == first
+    assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+    exits(transport)
+
+
+async def test_failed_panel_edit_keeps_delivery_pending_without_new_answer_messages(app):
+    from aiogram.exceptions import TelegramNetworkError
+
+    runtime, transport, engine, native = app
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    await click(app, "1")
+    await click(app, "➕ New session")
+    sid = runtime.store.get("selected")
+    engine.store.event(sid, "user", {"text": "A request"})
+    event_id = engine.store.event(sid, "message", {"text": "Retained answer"})
+    runtime.queue_update({"id": event_id, "kind": "message", "session_id": sid, "payload": {}})
+    original = transport.make_request
+
+    async def unavailable(bot, method, timeout=None):
+        if isinstance(method, EditMessageText):
+            raise TelegramNetworkError(method=method, message="test transport outage")
+        return await original(bot, method, timeout)
+
+    transport.make_request = unavailable
+    with pytest.raises(TelegramNetworkError):
+        await runtime.deliver_pending()
+    assert runtime.store.one("SELECT status FROM outbox WHERE event_id=?", (event_id,))["status"] == "pending"
+    transport.make_request = original
+    assert await runtime.deliver_pending()
+    assert "Retained answer" in panel(transport).text
+    assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1
+
+
+async def test_long_answer_is_browsable_in_one_panel_without_dropping_text(app):
+    runtime, transport, engine, native = app
+    await command(app, "/start")
+    await click(app, "📍 Location")
+    await click(app, "1")
+    await click(app, "➕ New session")
+    sid = runtime.store.get("selected")
+    engine.store.event(sid, "user", {"text": "Original prompt"})
+    answer = "Native answer 🚀\n" * 800
+    engine.store.event(sid, "message", {"text": answer})
+    await runtime.refresh_panel()
+    bodies = []
+    while True:
+        current = panel(transport)
+        assert len(current.text.encode("utf-16-le")) // 2 <= 4096
+        bodies.append(current.text.split("\n\n", 1)[1])
+        labels = [b.text for row in current.reply_markup.inline_keyboard for b in row]
+        if "◀" not in labels:
+            break
+        await click(app, "◀")
+    assert "".join(reversed(bodies)) == "You\nOriginal prompt\n\nCodex\n" + answer
+    assert sum(isinstance(m, SendMessage) for m in transport.calls) == 1

@@ -6,12 +6,18 @@ bot/engine services. No added LLM, translated prompts or command approval layer.
 
 ## Use
 
-Open the bot and send `/menu`. Continue the last session, choose an existing
-one, or create a session in a registered project, Home, or another directory.
-Send text or images directly. `/stop` interrupts the selected turn; `/menu`
-leaves it running. Actions offers rename, history export, live model/effort
-selection, directory changes and archival. Archived sessions retain files and
-can be reopened. Multiple conversations in one project share its files.
+Open the bot and send `/start` or `/menu` to open Main Deck. Settings is the
+first full-width button. Choose Location, then a numbered directory (Home is
+first), then an existing session or New session. Other location accepts an
+existing absolute directory. Session lists and archives belong to that location.
+
+The session panel shows your request and Codex response. Previous/Next browse
+history and long replies without creating more bot messages; Latest follows
+live output. Config selects a curated model, cycles reasoning and toggles native
+Plan mode in place. Details contains session metadata, Rename and Close. Every
+screen ends with Deck and Back in one row. Navigation leaves work running; Stop
+interrupts it. Archived sessions preserve history/files and can be reopened.
+Multiple conversations in one location share its files.
 
 ## Development
 
@@ -56,11 +62,13 @@ Runtime settings: `~/.config/codex-relay/config.toml` and `bot-token`.
 Data: `~/.local/state/codex-relay/`. Installed code:
 `~/.local/share/codex-relay/releases/<commit>` with independent current links.
 No public port, Redis, database server, Docker or model API key is required.
+The prepared VPS deploy key now supports Git read/write for this repository;
+other private repositories and GitHub API commands need their own access.
 
 See [product rules](BUSINESS.md), [architecture](docs/architecture.md), and
 [operations and recovery](docs/operations.md). The first VPS installation and
 its remaining owner checks are recorded in [deployment evidence](docs/verification.md).
 Voice and other host transports
 are later stages. Native history survives restarts; interrupted commands and
-RPCs with unknown outcomes are not blindly replayed. Telegram display delivery
-is at least once and can duplicate a response after an ambiguous network failure.
+RPCs with unknown outcomes are not blindly replayed. Panel edits are retried;
+an inaccessible or deleted Telegram panel may require a replacement message.

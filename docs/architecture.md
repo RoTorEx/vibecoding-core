@@ -35,11 +35,14 @@ before its turn/start response. Per-session locks order sends and lifecycle
 changes without serializing independent conversations.
 
 Native completed agent messages and terminal states are durable events. Bot
-imports them into an outbox and advances its event cursor transactionally.
-Telegram sends are at least once: a lost successful send response can produce
-a duplicate display message on retry. This never resubmits the agent command.
-Transient streaming previews are replaceable and bounded; final text is split
-losslessly below Telegram limits. Operational logs exclude message payloads,
+imports refresh requests into its outbox and advances its event cursor
+transactionally. Delivery edits the existing dialog panel, acknowledges only
+the captured batch after rendering, and retries failures. Background results
+remain in their native session and cannot replace the screen being viewed.
+Streaming uses the same panel. Stable exchange cursors and lossless UTF-16 part
+paging expose complete retained history without the CLI export's recent-event
+limit. Native questions and user answers are retained in that conversation.
+Operational logs exclude message payloads,
 credentials, token-bearing URLs and native stderr.
 
 ## Restart and update boundaries
@@ -58,6 +61,14 @@ run in an external systemd task, drain new input, and wait for idle turns before
 restarting. The deployment lock serializes updates and rollback. Data and
 credentials remain outside releases. Versioned code is copied from a clean,
 checked commit; dirty development sources are never installed implicitly.
+
+UI schema 2 replaces the previous navigation. Deployment resets only incompatible
+FSM state while the bot is stopped, on both upgrade and rollback. Selection,
+inbox/outbox, native history and project files are preserved. Compatible restarts
+keep their screen and message ID. An additive default/plan column migrates
+existing session rows without changing their IDs or native thread identities.
+Config sends native collaborationMode settings, using built-in mode instructions
+and no custom developer prompt. Changes during a turn affect the next turn.
 
 ## Security and limitations
 

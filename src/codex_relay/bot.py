@@ -1,7 +1,6 @@
 """Durable private Telegram transport. Agent execution belongs to Engine."""
 
 import asyncio
-import contextlib
 import io
 import json
 import logging
@@ -16,6 +15,7 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import (
     TelegramBadRequest,
     TelegramConflictError,
+    TelegramForbiddenError,
     TelegramNetworkError,
     TelegramRetryAfter,
 )
@@ -23,20 +23,22 @@ from aiogram.filters import Command
 from aiogram.fsm.state import State
 from aiogram.fsm.storage.base import BaseStorage, StorageKey
 from aiogram.types import (
-    BufferedInputFile,
+    BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
     Update,
 )
-from aiogram_dialog import DialogManager, setup_dialogs
+from aiogram_dialog import DialogManager, ShowMode, setup_dialogs
 from aiogram_dialog.api.exceptions import UnknownIntent, UnknownState
+from aiogram_dialog.manager.message_manager import MessageManager
 
 from codex_relay.config import Settings
-from codex_relay.dialogs import Screens, make_dialog, open_screen
+from codex_relay.dialogs import Screens, back, go, make_dialog, open_screen
 from codex_relay.engine import EngineClient
-from codex_relay.presentation import event_text, split_text
+from codex_relay.presentation import split_text
 from codex_relay.store import BotStore
 
 log = logging.getLogger(__name__)
@@ -76,11 +78,30 @@ class SQLiteFSM(BaseStorage):
         pass
 
 
+class PanelMessages(MessageManager):
+    def __init__(self, app):
+        self.app = app
+
+    async def show_message(self, bot, new_message, old_message):
+        async with self.app.send_lock:
+            if old_message is None or self._message_changed(new_message, old_message):
+                await self.app.throttle()
+            sent = await super().show_message(bot, new_message, old_message)
+            self.app.store.set("panel_id", str(sent.message_id))
+            return sent
+
+
 class BotRuntime:
     def __init__(self, settings: Settings, bot=None, engine=None):
         self.settings = settings
         settings.prepare()
         self.store = BotStore(settings.data_dir / "bot.db")
+        if self.store.get("ui_version") != "2":
+            with self.store.db:
+                self.store.db.execute("DELETE FROM meta WHERE key LIKE 'fsm:%'")
+            self.store.set("ui_version", "2")
+            self.store.set("screen", "")
+            self.store.set("mode", "menu")
         self.bot = bot or Bot(settings.read_token())
         self.engine = engine or EngineClient(settings)
         self.dp = Dispatcher(storage=SQLiteFSM(self.store))
@@ -89,7 +110,6 @@ class BotRuntime:
         self.send_lock = asyncio.Lock()
         self.ui_lock = asyncio.Lock()
         self.stop_event = asyncio.Event()
-        self.previews: dict[str, str] = {}
         self._setup()
 
     def _setup(self):
@@ -102,15 +122,15 @@ class BotRuntime:
                 sid = self.store.get("selected")
                 if sid:
                     await self.engine.call(f"/sessions/{sid}/stop", {})
-                    await self.send("Stop requested.")
+                    self.store.set("notice", "Stop requested.")
+                    if dialog_manager.has_context():
+                        await dialog_manager.show(ShowMode.EDIT)
+                    else:
+                        await open_screen(dialog_manager, Screens.deck)
             elif command == "/help":
-                await self.send(
-                    "Choose a session, then send text or images. New messages steer active work.\n"
-                    "/menu leaves the conversation running. /stop interrupts its current turn.\n"
-                    "/sessions switches conversations. /new chooses a working directory."
-                )
+                await open_screen(dialog_manager, Screens.deck)
             else:
-                screen = {"/sessions": Screens.sessions, "/new": Screens.projects}.get(command, Screens.deck)
+                screen = {"/sessions": Screens.sessions, "/new": Screens.sessions}.get(command, Screens.deck)
                 await open_screen(dialog_manager, screen)
 
         @controls.callback_query(F.data.startswith("open:"))
@@ -121,7 +141,15 @@ class BotRuntime:
                 await callback.answer("This session is archived. Reopen it from Archived.")
                 return
             self.store.set("selected", sid)
+            self.store.set("location", session["cwd"])
+            self.store.set("history_anchor", "")
+            self.store.set("history_part", "-1")
             await open_screen(dialog_manager, Screens.chat)
+            await callback.answer()
+
+        @controls.callback_query(F.data.in_({"deck", "back"}))
+        async def recover_deck(callback: CallbackQuery, dialog_manager: DialogManager):
+            await open_screen(dialog_manager, Screens.deck)
             await callback.answer()
 
         @controls.callback_query(F.data.startswith("answer:"))
@@ -142,12 +170,36 @@ class BotRuntime:
 
         self.dp.include_router(controls)
         self.dp.include_router(make_dialog())
-        setup_dialogs(self.dp)
+        self.background = setup_dialogs(self.dp, message_manager=PanelMessages(self))
+
+    async def refresh_panel(self) -> bool:
+        if not self.store.get("screen"):
+            return False
+        async with self.ui_lock:
+            await self.render_panel()
+        return True
+
+    async def initialize_panel(self):
+        async with self.ui_lock:
+            bg = self.background.bg(self.bot, self.settings.allowed_user_id, self.settings.allowed_user_id)
+            async with bg.fg() as manager:
+                await open_screen(manager, Screens.deck)
+
+    async def render_panel(self):
+        bg = self.background.bg(self.bot, self.settings.allowed_user_id, self.settings.allowed_user_id)
+        async with bg.fg() as manager:
+            await manager.show(ShowMode.EDIT)
 
     @staticmethod
     def open_markup(sid: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="💬 Open session", callback_data="open:" + sid)]]
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💬 Open session", callback_data="open:" + sid)],
+                [
+                    InlineKeyboardButton(text="🏠 Deck", callback_data="deck"),
+                    InlineKeyboardButton(text="⬅️ Back", callback_data="back"),
+                ],
+            ]
         )
 
     async def throttle(self):
@@ -155,6 +207,15 @@ class BotRuntime:
         self.last_send = time.monotonic()
 
     async def send(self, text: str, markup=None):
+        if markup is None:
+            markup = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="🏠 Deck", callback_data="deck"),
+                        InlineKeyboardButton(text="⬅️ Back", callback_data="back"),
+                    ]
+                ]
+            )
         last = None
         async with self.send_lock:
             for part in split_text(text):
@@ -168,26 +229,6 @@ class BotRuntime:
                     except TelegramRetryAfter as exc:
                         await asyncio.sleep(exc.retry_after)
         return last
-
-    async def send_history(self, sid: str):
-        session = await self.engine.call(f"/sessions/{sid}")
-        events = await self.engine.call(f"/sessions/{sid}/history")
-        text = "\n\n".join(
-            f"{'You' if e['kind'] == 'user' else e['kind'].capitalize()}: "
-            + (e["payload"].get("text") or json.dumps(e["payload"], ensure_ascii=False))
-            for e in events
-        )
-        if not text:
-            await self.send("No retained messages yet.")
-            return
-        async with self.send_lock:
-            await self.throttle()
-            await self.bot.send_document(
-                self.settings.allowed_user_id,
-                BufferedInputFile(text.encode(), filename=f"session-{sid}.txt"),
-                caption=session["name"][:1000],
-                reply_markup=self.open_markup(sid),
-            )
 
     async def question(self, qid: str) -> dict:
         # Persisted delivery metadata binds a button to its original session.
@@ -207,11 +248,7 @@ class BotRuntime:
         self.store.set("answers:" + qid, json.dumps(answers))
         questions = q["payload"].get("questions", [])
         remaining = [x for x in questions if x["id"] not in answers]
-        if remaining:
-            await self.send(
-                f"Answer recorded. Next: {remaining[0]['question']}", self.open_markup(q["session_id"])
-            )
-        else:
+        if not remaining:
             await self.engine.call(f"/questions/{qid}", {"answers": answers})
 
     def capture(self, update: dict):
@@ -250,6 +287,7 @@ class BotRuntime:
             self.store.processed(row["id"])
             return
         async with self.ui_lock:
+            self.store.set("notice", "")
             try:
                 await self.dp.feed_update(
                     self.bot,
@@ -259,7 +297,11 @@ class BotRuntime:
             except (UnknownIntent, UnknownState):
                 await self.send("That menu expired. Use /menu for fresh controls.")
             except (ValueError, IndexError, KeyError) as exc:
-                await self.send(str(exc)[:1000] + "\nUse /menu to continue.")
+                self.store.set("notice", str(exc)[:1000])
+                if self.store.get("screen"):
+                    await self.render_panel()
+                else:
+                    await self.send(str(exc)[:1000] + "\nUse /menu to continue.")
             self.store.processed(row["id"])
 
     async def process_input(self, row: dict, body: dict):
@@ -281,14 +323,23 @@ class BotRuntime:
             if len(parts) != 2:
                 raise ValueError("Use two lines: project name, then existing directory path.")
             await self.engine.call("/projects", {"name": parts[0], "path": parts[1]})
+        elif action == "location":
+            from pathlib import Path
+
+            if not Path(text).is_absolute():
+                raise ValueError("Use an absolute directory path")
+            project = await self.engine.call("/projects", {"name": Path(text).name or "/", "path": text})
+            self.store.set("location", project["path"])
         else:
             raise ValueError("That input step expired. Use /menu.")
-        self.store.set("mode", "menu")
-        self.store.set("input_action", "")
-        await self.send(
-            "Saved. Use /menu or open the session below.",
-            self.open_markup(self.store.get("selected")) if self.store.get("selected") else None,
-        )
+        bg = self.background.bg(self.bot, self.settings.allowed_user_id, self.settings.allowed_user_id)
+        async with bg.fg() as manager:
+            if action == "location":
+                await back(None, None, manager)
+                await go(manager, Screens.sessions)
+            else:
+                await back(None, None, manager)
+            await manager.show(ShowMode.EDIT)
 
     async def download_image(self, message: dict, sid: str) -> str | None:
         image = None
@@ -352,7 +403,9 @@ class BotRuntime:
         if row["mode"] == "input":
             await self.process_input(row, bodies[0])
         elif row["mode"] != "chat" or not row["session_id"]:
-            await self.send("Choose a session first: /sessions or /new.")
+            self.store.set("notice", "Open Location from Main Deck, then choose or start a session.")
+            if not await self.refresh_panel():
+                await self.send("Open Location from Main Deck, then choose or start a session.")
         else:
             sid = row["session_id"]
             messages = [b["message"] for b in bodies]
@@ -377,6 +430,9 @@ class BotRuntime:
                     payload = {"request_id": rid, "session_id": sid, "text": text, "images": images}
                     self.store.prepare_request([r["id"] for r in rows], rid, payload)
                 await self.engine.call("/messages", payload)
+                if self.store.get("selected") == sid:
+                    self.store.set("history_anchor", "")
+                    self.store.set("history_part", "-1")
         for r in rows:
             self.store.processed(r["id"])
 
@@ -409,9 +465,9 @@ class BotRuntime:
                     await self.process_messages(batch)
                     used.update(r["id"] for r in batch)
                 except ValueError as exc:
-                    await self.send(
-                        str(exc)[:1200], self.open_markup(row["session_id"]) if row["session_id"] else None
-                    )
+                    self.store.set("notice", str(exc)[:1000])
+                    if not await self.refresh_panel():
+                        await self.send(str(exc)[:1000])
                     for r in batch:
                         self.store.processed(r["id"])
                 except Exception as exc:
@@ -419,149 +475,66 @@ class BotRuntime:
                     blocked.add(row["session_id"])
             await asyncio.sleep(0.3)
 
-    def queue_question(self, event: dict, session: dict):
-        p = event["payload"]
-        qid = p["question_id"]
-        self.store.set("question_session:" + qid, session["id"])
-        text = f"💬 {session['name']}\n\n"
-        buttons = []
-        if p["method"] == "item/tool/requestUserInput":
-            for qi, q in enumerate(p.get("questions", [])):
-                text += f"{q.get('header', '')}\n{q['question']}\n"
-                for oi, option in enumerate(q.get("options") or []):
-                    text += f"• {option['label']}: {option.get('description', '')}\n"
-                    buttons.append(
-                        [
-                            InlineKeyboardButton(
-                                text=option["label"][:60], callback_data=f"answer:{qid}:{qi}:{oi}"
-                            )
-                        ]
-                    )
-                text += "\n"
-            text += "Open this session to type a free-text answer."
-        else:
-            text += "MCP request:\n" + str(p.get("message") or p.get("url") or p.get("request", {}))
-            buttons += [
-                [
-                    InlineKeyboardButton(text="Accept", callback_data=f"mcp:{qid}:accept"),
-                    InlineKeyboardButton(text="Decline", callback_data=f"mcp:{qid}:decline"),
-                ]
-            ]
-        buttons.append([InlineKeyboardButton(text="💬 Open session", callback_data="open:" + session["id"])])
-        self.store.queue_event(
-            event["id"],
-            split_text(text),
-            InlineKeyboardMarkup(inline_keyboard=buttons).model_dump(exclude_none=True),
+    def queue_update(self, event: dict):
+        if event["kind"] == "question":
+            qid = event["payload"]["question_id"]
+            self.store.set("question_session:" + qid, event["session_id"])
+        # Normal delivery edits the panel. Keep a readable body for older bot releases on rollback.
+        payload = event["payload"]
+        text = payload.get("text") or payload.get("status") or json.dumps(payload, ensure_ascii=False)
+        markup = (
+            self.open_markup(event["session_id"]).model_dump(exclude_none=True)
+            if event.get("session_id")
+            else None
         )
+        self.store.queue_event(event["id"], [text or "Session updated."], markup)
 
     async def events_loop(self):
         while not self.stop_event.is_set():
             try:
                 events = await self.engine.call("/events?after=" + self.store.get("event_cursor", "0"))
                 for event in events:
-                    sid = event["session_id"]
-                    if event["kind"] not in {"message", "error", "completed", "question"}:
-                        self.store.queue_event(event["id"], [], None)
-                        continue
-                    session = await self.engine.call(f"/sessions/{sid}") if sid else None
-                    if event["kind"] == "question" and session:
-                        self.queue_question(event, session)
+                    if event["kind"] in {"user", "message", "error", "completed", "question"}:
+                        self.queue_update(event)
                     else:
-                        self.store.queue_event(
-                            event["id"],
-                            split_text(event_text(event, session, self.settings.host_id)),
-                            self.open_markup(sid).model_dump(exclude_none=True) if sid else None,
-                        )
-                    if event["kind"] == "completed" and sid:
-                        await self.remove_preview(sid)
+                        self.store.queue_event(event["id"], [], None)
             except Exception as exc:
                 log.warning("Event poll will retry: %s", type(exc).__name__)
             await asyncio.sleep(0.7)
 
+    async def deliver_pending(self):
+        rows = self.store.rows("SELECT id FROM outbox WHERE status='pending' ORDER BY id LIMIT 100")
+        if not rows or not await self.refresh_panel():
+            return False
+        # Acknowledge only the captured batch: newer events remain pending.
+        with self.store.db:
+            self.store.db.executemany(
+                "UPDATE outbox SET status='sent',telegram_id=? WHERE id=?",
+                [(self.store.get("panel_id"), row["id"]) for row in rows],
+            )
+        return True
+
     async def delivery_loop(self):
         while not self.stop_event.is_set():
-            row = self.store.one("SELECT * FROM outbox WHERE status='pending' ORDER BY id LIMIT 1")
-            if not row:
-                await asyncio.sleep(0.3)
-                continue
             try:
-                markup = (
-                    InlineKeyboardMarkup.model_validate(json.loads(row["markup"])) if row["markup"] else None
-                )
-                message = await self.send(row["body"], markup)
-                with self.store.db:
-                    self.store.db.execute(
-                        "UPDATE outbox SET status='sent',telegram_id=? WHERE id=?",
-                        (message.message_id, row["id"]),
-                    )
-            except TelegramBadRequest:
-                # A malformed/stale keyboard must not prevent delivery of the agent text.
-                try:
-                    message = await self.send(row["body"])
-                    with self.store.db:
-                        self.store.db.execute(
-                            "UPDATE outbox SET status='sent',telegram_id=? WHERE id=?",
-                            (message.message_id, row["id"]),
-                        )
-                except Exception as exc:
-                    log.warning("Delivery retained: %s", type(exc).__name__)
-                    await asyncio.sleep(3)
+                await self.deliver_pending()
+            except TelegramRetryAfter as exc:
+                await asyncio.sleep(exc.retry_after)
             except Exception as exc:
-                log.warning("Delivery retained: %s", type(exc).__name__)
+                log.warning("Panel update retained: %s", type(exc).__name__)
                 await asyncio.sleep(3)
-
-    async def remove_preview(self, sid: str):
-        key = "preview:" + sid
-        mid = self.store.get(key)
-        if mid:
-            async with self.send_lock:
-                await self.throttle()
-                with contextlib.suppress(TelegramBadRequest):
-                    await self.bot.delete_message(self.settings.allowed_user_id, int(mid))
-            self.store.set(key, "")
-        self.previews.pop(sid, None)
+            await asyncio.sleep(0.3)
 
     async def preview_loop(self):
         while not self.stop_event.is_set():
             try:
                 live = await self.engine.call("/live")
-                # Render only the currently viewed conversation; other hosts/sessions continue independently.
-                sid = self.store.get("selected")
-                if self.store.get("mode") == "chat" and sid in live:
-                    s = await self.engine.call(f"/sessions/{sid}")
-                    p = live[sid]
-                    text = f"💬 {s['name']} · {p.get('activity', 'Working')}\n\n" + p.get("text", "")[-1500:]
-                    if self.previews.get(sid) != text:
-                        key = "preview:" + sid
-                        mid = self.store.get(key)
-                        async with self.send_lock:
-                            await self.throttle()
-                            if mid:
-                                try:
-                                    await self.bot.edit_message_text(
-                                        text,
-                                        chat_id=self.settings.allowed_user_id,
-                                        message_id=int(mid),
-                                        parse_mode=None,
-                                    )
-                                except TelegramBadRequest:
-                                    self.store.set(key, "")
-                            else:
-                                message = await self.bot.send_message(
-                                    self.settings.allowed_user_id, text, parse_mode=None
-                                )
-                                self.store.set(key, str(message.message_id))
-                        self.previews[sid] = text
-                for preview_row in self.store.rows(
-                    "SELECT key,value FROM meta WHERE key LIKE 'preview:%' AND value!=''"
-                ):
-                    old_sid = preview_row["key"].split(":", 1)[1]
-                    if old_sid not in live:
-                        await self.remove_preview(old_sid)
+                if self.store.get("mode") == "chat" and self.store.get("selected") in live:
+                    await self.refresh_panel()
             except TelegramRetryAfter as exc:
                 await asyncio.sleep(exc.retry_after)
             except Exception as exc:
-                log.warning("Preview deferred: %s", type(exc).__name__)
+                log.warning("Panel preview deferred: %s", type(exc).__name__)
             await asyncio.sleep(1.5)
 
     async def poll(self):
@@ -577,6 +550,28 @@ class BotRuntime:
                 "This bot already has a webhook. Resolve the existing consumer before polling."
             )
         await self.engine.call("/health")
+        commands = [
+            BotCommand(command="start", description="Open Main Deck"),
+            BotCommand(command="menu", description="Open Main Deck"),
+            BotCommand(command="stop", description="Stop the selected task"),
+        ]
+        for language in ("", "en", "ru"):
+            await self.bot.set_my_commands(commands, language_code=language)
+            try:
+                await self.bot.set_my_commands(
+                    commands,
+                    scope=BotCommandScopeChat(chat_id=self.settings.allowed_user_id),
+                    language_code=language,
+                )
+            except TelegramBadRequest as exc:
+                if "chat not found" not in str(exc).lower():
+                    raise
+        if not self.store.get("screen"):
+            try:
+                await self.initialize_panel()
+            except TelegramForbiddenError:
+                # A fresh bot cannot initiate a chat before its owner presses Start.
+                log.info("Waiting for the owner to start the private chat")
         self.store.set("bot_pid", str(os.getpid()))
         log.info("Bot connected: @%s; owner=%s", me.username, self.settings.allowed_user_id)
         while not self.stop_event.is_set():
@@ -618,7 +613,11 @@ class BotRuntime:
                 try:
                     await self.process_messages([row])
                 except ValueError as exc:
-                    await self.send(str(exc)[:1200] + "\nCorrect the value or use /menu to cancel.")
+                    self.store.set("notice", str(exc)[:1000])
+                    if self.store.get("screen"):
+                        await self.render_panel()
+                    else:
+                        await self.send(str(exc)[:1000] + "\nUse /menu to continue.")
                     self.store.processed(row["id"])
 
     async def run(self):
