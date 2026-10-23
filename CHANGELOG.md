@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-24
+
 - Support the independent workspace routing repository without overwriting its entrypoints; keep root source snapshots restorable alongside both components.
 
 ## [0.1.4] - 2026-10-23
