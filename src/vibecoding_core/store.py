@@ -164,7 +164,7 @@ class EngineStore(Database):
             {**r, "payload": json.loads(r["payload"])}
             for r in self.rows(
                 "SELECT * FROM (SELECT * FROM events WHERE session_id=? AND kind IN "
-                "('user','message','completed','error','question') ORDER BY id DESC LIMIT 200) ORDER BY id",
+                "('user','message','reasoning_summary','completed','error','question') ORDER BY id DESC LIMIT 200) ORDER BY id",
                 (sid,),
             )
         ]
@@ -190,7 +190,7 @@ class EngineStore(Database):
         )
         replies = self.rows(
             "SELECT * FROM events WHERE session_id=? AND id>? AND id<? "
-            "AND kind IN ('message','error','completed','question') ORDER BY id",
+            "AND kind IN ('message','reasoning_summary','error','completed','question') ORDER BY id",
             (sid, user["id"], following["id"] if following else 9223372036854775807),
         )
         counts = self.one(

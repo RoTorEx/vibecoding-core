@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Request native public reasoning summaries, stream their sections and retain
+  completed summaries in conversation history without collecting raw reasoning.
+- Publish connecting feedback and a stable elapsed-time origin before native
+  execution starts, and clear failed initialization feedback.
+
 ## [0.1.1] - 2026-10-23
 
 - Use one stable host operations script, remove retired worker copies, rebuild rollbacks from Git and prune obsolete images after activation. Defer a duplicate snapshot without failing the timer.

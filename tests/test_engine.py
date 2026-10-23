@@ -239,3 +239,56 @@ def test_old_session_schema_migrates_without_losing_identity_or_events(tmp_path)
     assert store.session("original")["name"] == "Kept"
     assert store.conversation("original")["user"]["payload"]["text"] == "kept"
     store.close()
+
+
+async def test_public_summary_stream_is_durable_and_raw_reasoning_is_ignored(host):
+    settings, engine, native, client = host
+    s = await new(host)
+    await client.call("/messages", {"request_id": "summary", "session_id": s["id"], "text": "Work"})
+    await settle(engine)
+    thread = engine.store.session(s["id"])["thread_id"]
+    base = {"threadId": thread, "itemId": "summary-item", "summaryIndex": 0}
+    engine.on_event("item/reasoning/summaryTextDelta", {**base, "delta": "Checking "})
+    engine.on_event("item/reasoning/summaryTextDelta", {**base, "delta": "the behavior."})
+    engine.on_event("item/reasoning/summaryPartAdded", {**base, "summaryIndex": 1})
+    engine.on_event(
+        "item/reasoning/summaryTextDelta", {**base, "summaryIndex": 1, "delta": "Verifying recovery."}
+    )
+    engine.on_event("item/reasoning/textDelta", {**base, "delta": "RAW_REASONING_MUST_NOT_APPEAR"})
+    live = (await client.call("/live"))[s["id"]]
+    assert live["started"] > 0
+    assert live["summaries"]["summary-item"] == {"0": "Checking the behavior.", "1": "Verifying recovery."}
+    assert "RAW_REASONING" not in str(live)
+    completion = {
+        "threadId": thread,
+        "item": {
+            "id": "summary-item",
+            "type": "reasoning",
+            "summary": ["Checked the behavior.", "Verified recovery."],
+            "content": ["PRIVATE_RAW"],
+        },
+    }
+    engine.on_event("item/completed", completion)
+    engine.on_event("item/completed", completion)
+    native.finish(thread, text="Final answer")
+    conversation = await client.call("/sessions/" + s["id"] + "/conversation")
+    summaries = [r for r in conversation["replies"] if r["kind"] == "reasoning_summary"]
+    assert len(summaries) == 1
+    assert summaries[0]["payload"]["parts"] == ["Checked the behavior.", "Verified recovery."]
+    assert "PRIVATE_RAW" not in str(conversation)
+    assert "RAW_REASONING" not in str(await client.call("/sessions/" + s["id"] + "/history"))
+    start = next(p for method, p in native.calls if method == "turn/start")
+    assert start["summary"] == "auto"
+
+
+async def test_connecting_feedback_exists_before_native_reply_and_clears_on_failure(host):
+    settings, engine, native, client = host
+    s = await new(host)
+    engine.submit({"request_id": "connecting", "session_id": s["id"], "text": "Work"})
+    assert engine.live[s["id"]]["activity"] == "Connecting"
+    assert engine.store.session(s["id"])["status"] == "connecting"
+    native.fail_method = "thread/start"
+    native.failure = ValueError("Test failure")
+    await settle(engine)
+    assert s["id"] not in engine.live
+    assert engine.store.session(s["id"])["status"] == "failed"

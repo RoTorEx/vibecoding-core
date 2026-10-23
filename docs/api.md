@@ -22,3 +22,11 @@ Session/thread/request identities, payload fields, event kinds, cursor ordering,
 native modes and recovery semantics are preserved from the prior working MVP.
 Changes affecting both components require coordinated compatible commits and
 integration checks before deployment.
+
+Progress fields are additive within protocol v1. Live entries include started
+(epoch seconds) and summaries (item ID to section index/text map). Completed
+public summaries are reasoning_summary events with item_id, text and parts;
+conversation/history include them in chronological order. Raw reasoning is not
+an application event. Agent text deltas and tool events remain separate from
+public summaries; clients must not display them as reasoning. Native protocol
+reference: https://learn.chatgpt.com/docs/app-server#item-deltas.

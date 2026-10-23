@@ -87,6 +87,9 @@ class Engine:
         self.store.event(sid, "user", {"text": text, "images": images, "request_id": rid})
         if session["name"] == "New session" and text.strip():
             self.store.update_session(sid, name=" ".join(text.split())[:70])
+        if not session["turn_id"]:
+            self.store.update_session(sid, status="connecting")
+            self.live[sid] = {"text": "", "activity": "Connecting", "started": time.time(), "summaries": {}}
         self.spawn(self.dispatch(rid))
         return {"request_id": rid, "state": "queued"}
 
@@ -125,6 +128,7 @@ class Engine:
                     "clientUserMessageId": rid,
                     "cwd": s["cwd"],
                     "effort": s["effort"],
+                    "summary": "auto",
                     "approvalPolicy": "never",
                     "sandboxPolicy": {"type": "dangerFullAccess"},
                 }
@@ -168,6 +172,9 @@ class Engine:
             except Exception as exc:
                 uncertain = dispatched and isinstance(exc, (UnknownOutcome, ConnectionError, TimeoutError))
                 self.store.request_state(rid, "uncertain" if uncertain else "failed")
+                if self.store.session(sid)["status"] == "connecting":
+                    self.store.update_session(sid, status="uncertain" if uncertain else "failed")
+                    self.live.pop(sid, None)
                 message = (
                     str(exc)
                     if isinstance(exc, (RpcError, ValueError, UnknownOutcome))
@@ -187,7 +194,21 @@ class Engine:
         sid = s["id"]
         if method == "turn/started":
             self.store.update_session(sid, status="working", turn_id=params["turn"]["id"])
-            self.live[sid] = {"text": "", "activity": "Working", "updated": time.time()}
+            started = self.live.get(sid, {}).get("started", time.time())
+            self.live[sid] = {
+                "text": "",
+                "activity": "Working",
+                "started": started,
+                "updated": time.time(),
+                "summaries": {},
+            }
+        elif method in {"item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded"}:
+            # Only public summaries are consumed; raw reasoning/textDelta is ignored.
+            live = self.live.setdefault(sid, {"text": "", "started": time.time()})
+            parts = live.setdefault("summaries", {}).setdefault(params["itemId"], {})
+            index = str(params.get("summaryIndex", 0))
+            parts[index] = parts.get(index, "") + params.get("delta", "")
+            live["updated"] = time.time()
         elif method == "item/agentMessage/delta":
             live = self.live.setdefault(sid, {"text": "", "activity": "Working"})
             live["text"] += params.get("delta", "")
@@ -205,7 +226,9 @@ class Engine:
                 self.live.setdefault(sid, {"text": ""}).update(activity=activity, updated=time.time())
         elif method == "item/completed":
             item = params.get("item", {})
-            if item.get("type") in {"agentMessage", "plan"}:
+            if item.get("type") == "reasoning":
+                self.finish_summary(sid, item["id"], item.get("summary"))
+            elif item.get("type") in {"agentMessage", "plan"}:
                 self.store.event(
                     sid,
                     "message",
@@ -221,6 +244,8 @@ class Engine:
                 self.store.event(sid, "tool", {"item": item})
         elif method == "turn/completed":
             turn = params["turn"]
+            for item_id in list(self.live.get(sid, {}).get("summaries", {})):
+                self.finish_summary(sid, item_id)
             self.store.update_session(
                 sid, status="idle" if turn["status"] == "completed" else turn["status"], turn_id=None
             )
@@ -240,8 +265,24 @@ class Engine:
                     (json.dumps(params.get("requestId")),),
                 )
 
+    def finish_summary(self, sid: str, item_id: str, summary: list | None = None) -> None:
+        pending = self.live.get(sid, {}).get("summaries", {}).pop(item_id, {})
+        parts = summary or [pending[key] for key in sorted(pending, key=int)]
+        parts = [text for text in parts if isinstance(text, str) and text.strip()]
+        if parts and not self.store.one(
+            "SELECT id FROM events WHERE session_id=? AND kind='reasoning_summary' "
+            "AND json_extract(payload,'$.item_id')=?",
+            (sid, item_id),
+        ):
+            self.store.event(
+                sid, "reasoning_summary", {"text": "\n\n".join(parts), "parts": parts, "item_id": item_id}
+            )
+
     def disconnected(self) -> None:
         self.loaded.clear()
+        for sid, live in list(self.live.items()):
+            for item_id in list(live.get("summaries", {})):
+                self.finish_summary(sid, item_id)
         self.live.clear()
         for s in self.store.sessions():
             if s["turn_id"]:

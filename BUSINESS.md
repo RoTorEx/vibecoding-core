@@ -64,3 +64,12 @@ Verified activation retires obsolete images; recorded revision strings are
 source identities, not retained executable copies. Rollback rebuilds the chosen
 Git revision. A staged Core candidate is protected until the idle activation
 finishes; automatic host image cleanup must not remove that pending candidate.
+
+## Public progress
+
+Request native reasoning summaries with summary=auto. Only public summary
+notifications and the completed reasoning item's summary field enter the Core
+progress API and durable conversation history. Never consume raw reasoning text
+or the reasoning item's content field. Retain summary section order and preserve
+completed summaries across restarts. Publish a started timestamp while connecting
+and executing so the UI can show elapsed time without inventing an ETA.
