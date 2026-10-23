@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-23
+
 - Use one stable host operations script, remove retired worker copies, rebuild rollbacks from Git and prune obsolete images after activation. Defer a duplicate snapshot without failing the timer.
 
 - Add independent Kernel-compliant interactive release and atomic tag publishing,
