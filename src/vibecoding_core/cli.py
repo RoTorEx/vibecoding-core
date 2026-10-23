@@ -6,24 +6,27 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tarfile
 import time
+import tomllib
+from contextlib import closing
 from pathlib import Path
 
-from codex_relay import __version__
-from codex_relay.config import Settings
-from codex_relay.engine import EngineClient
-from codex_relay.store import BotStore, EngineStore, identifier
+from vibecoding_core import __version__
+from vibecoding_core.config import Settings
+from vibecoding_core.engine import EngineClient
+from vibecoding_core.store import identifier
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="codex-relay", description=__doc__)
+    p = argparse.ArgumentParser(prog="vibecoding-core", description=__doc__)
     p.add_argument("--version", action="version", version=__version__)
     p.add_argument("--config", type=Path)
     sub = p.add_subparsers(dest="command", required=True)
-    for name in ["engine", "bot", "doctor"]:
+    for name in ["serve", "doctor", "health"]:
         sub.add_parser(name)
     project = sub.add_parser("project").add_subparsers(dest="action", required=True)
     project.add_parser("list")
@@ -97,12 +100,18 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                 raise ValueError("Active turns did not finish; backup deferred without interrupting work")
             await asyncio.sleep(1)
         stage.mkdir(mode=0o700)
-        for cls, name in [(EngineStore, "engine.db"), (BotStore, "bot.db")]:
-            store = cls(settings.data_dir / name)
-            try:
-                store.backup(stage / name)
-            finally:
-                store.close()
+        for name in ["engine.db", "bot.db"]:
+            source = settings.data_dir / name
+            if not source.exists():
+                continue
+            with (
+                closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as db,
+                closing(sqlite3.connect(stage / name)) as dest,
+            ):
+                db.backup(dest)
+                if dest.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                    raise RuntimeError("Snapshot integrity check failed")
+            (stage / name).chmod(0o600)
         projects = await client.call("/projects")
         (stage / "manifest.json").write_text(
             json.dumps(
@@ -118,16 +127,11 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                 indent=2,
             )
         )
-        config = (
-            args.config
-            or Path(os.environ.get("CODEX_RELAY_CONFIG", "~/.config/codex-relay/config.toml")).expanduser()
-        )
+        config = settings.private_config_dir.expanduser()
         with tarfile.open(destination, "x:gz") as archive:
             archive.add(stage, arcname="relay")
             if config.exists():
-                archive.add(config, arcname="config/config.toml")
-            if settings.token_file.exists():
-                archive.add(settings.token_file, arcname="config/bot-token")
+                archive.add(config, arcname="config")
             uploads = settings.data_dir / "uploads"
             if uploads.exists():
                 archive.add(uploads, arcname="relay/uploads")
@@ -152,8 +156,6 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                         if source.is_file() and source.suffix in {".db", ".sqlite", ".sqlite3"}:
                             if source.name.startswith("logs_"):
                                 continue
-                            import sqlite3
-
                             with (
                                 sqlite3.connect(f"file:{source}?mode=ro", uri=True) as db,
                                 sqlite3.connect(stage / source.name) as out,
@@ -173,15 +175,27 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                     ".ruff_cache",
                 }
                 for project in projects:
-                    source = Path(project["path"])
+                    source = settings.host_path(project["path"])
                     # Home is a launch directory, never a blanket home-directory backup.
-                    if not (source / ".git").exists():
+                    if Path(project["path"]) == Path.home():
                         continue
+                    sources = [(source, "projects/" + project["id"])]
+                    marker = source / "workspace.toml"
+                    if not (source / ".git").exists():
+                        if not marker.exists():
+                            continue
+                        repos = tomllib.loads(marker.read_text()).get("repositories", [])
+                        if any(Path(r).is_absolute() or ".." in Path(r).parts for r in repos):
+                            raise ValueError("Invalid workspace repository path")
+                        sources = [(source / r, "projects/" + project["id"] + "/" + r) for r in repos]
+                        if not all((p / ".git").exists() for p, _ in sources):
+                            raise ValueError("Workspace repository is missing")
 
                     def source_filter(member):
                         return None if any(p in excluded for p in Path(member.name).parts) else member
 
-                    archive.add(source, arcname="projects/" + project["id"], filter=source_filter)
+                    for tree, archive_name in sources:
+                        archive.add(tree, arcname=archive_name, filter=source_filter)
         destination.chmod(0o600)
         with tarfile.open(destination) as archive:
             for member in archive:
@@ -208,22 +222,18 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
 
 async def execute(args):
     settings = Settings.load(args.config)
-    if args.command == "engine":
-        from codex_relay.engine import serve
+    if args.command == "serve":
+        from vibecoding_core.engine import serve
 
         return await serve(settings)
-    if args.command == "bot":
-        from codex_relay.bot import run
-
-        return await run(settings)
     client = EngineClient(settings)
     try:
-        if args.command == "doctor":
+        if args.command == "health":
+            result = await client.call("/health")
+        elif args.command == "doctor":
             result = {
-                "engine": await client.call("/health"),
+                "core": await client.call("/health"),
                 "account": await client.call("/account"),
-                "token_file_present": settings.token_file.exists(),
-                "owner_configured": settings.allowed_user_id > 0,
             }
         elif args.command == "project":
             if args.action == "list":

@@ -9,7 +9,7 @@ import signal
 from collections.abc import Callable
 from typing import Any
 
-from codex_relay import CORE_NAME, __version__
+from vibecoding_core import CORE_NAME, __version__
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class CodexClient:
                 "initialize",
                 {
                     "clientInfo": {
-                        "name": "codex_relay",
+                        "name": "vibecoding_core",
                         "title": CORE_NAME,
                         "version": __version__,
                     },

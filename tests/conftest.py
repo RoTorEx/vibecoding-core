@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from aiohttp import web
 
-from codex_relay.config import Settings
-from codex_relay.engine import Engine, EngineClient, application
+from vibecoding_core.config import Settings
+from vibecoding_core.engine import Engine, EngineClient, application
 
 
 class NativeFake:
@@ -72,9 +72,8 @@ async def host(tmp_path):
         data_dir=tmp_path / "state",
         runtime_dir=Path(runtime.name),
         development_root=tmp_path / "projects",
-        token_file=tmp_path / "token",
-        allowed_user_id=42,
         codex_command="unused",
+        private_config_dir=tmp_path / "config",
     )
     native = NativeFake()
     engine = Engine(settings, native)

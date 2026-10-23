@@ -1,7 +1,7 @@
 import pytest
 from conftest import settle
 
-from codex_relay.codex import UnknownOutcome
+from vibecoding_core.codex import UnknownOutcome
 
 
 async def new(host, name="Session"):
@@ -139,7 +139,7 @@ async def test_projects_and_live_model_settings(host):
 
 
 async def test_explicit_no_active_turn_rejection_starts_once_but_unknown_outcome_does_not(host):
-    from codex_relay.codex import RpcError
+    from vibecoding_core.codex import RpcError
 
     settings, engine, native, client = host
     s = await new(host)
@@ -220,7 +220,7 @@ async def test_conversation_cursors_reach_old_history_and_details_track_events(h
 def test_old_session_schema_migrates_without_losing_identity_or_events(tmp_path):
     import sqlite3
 
-    from codex_relay.store import EngineStore
+    from vibecoding_core.store import EngineStore
 
     path = tmp_path / "old.db"
     with sqlite3.connect(path) as db:

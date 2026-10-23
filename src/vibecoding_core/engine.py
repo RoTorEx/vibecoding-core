@@ -5,7 +5,6 @@ import contextlib
 import json
 import logging
 import os
-import shutil
 import signal
 import time
 from collections import defaultdict
@@ -13,10 +12,11 @@ from pathlib import Path
 
 from aiohttp import ClientSession, ClientTimeout, UnixConnector, web
 
-from codex_relay import __version__
-from codex_relay.codex import CodexClient, RpcError, UnknownOutcome
-from codex_relay.config import Settings
-from codex_relay.store import EngineStore, identifier
+from vibecoding_core import __version__
+from vibecoding_core.codex import CodexClient, RpcError, UnknownOutcome
+from vibecoding_core.config import Settings
+from vibecoding_core.host import inspect_directory
+from vibecoding_core.store import EngineStore, identifier
 
 log = logging.getLogger(__name__)
 
@@ -353,10 +353,8 @@ class Engine:
                     raise ValueError("Wait for the current turn before changing its model or folder")
                 values = {}
                 if "cwd" in body:
-                    path = Path(body["cwd"]).expanduser().resolve(strict=True)
-                    if not path.is_dir():
-                        raise ValueError("Working directory must exist")
-                    values["cwd"] = str(path)
+                    info = await inspect_directory(self.settings, body["cwd"])
+                    values["cwd"] = info["path"]
                 if "model" in body or "effort" in body:
                     await self.client.start()
                     models = (await self.client.request("model/list", {})).get("data", [])
@@ -420,10 +418,9 @@ def application(engine: Engine) -> web.Application:
             return web.json_response(
                 {
                     "ok": True,
+                    "protocol_version": 1,
                     "version": __version__,
-                    "revision": (Path(__file__).resolve().parents[2] / ".relay-revision").read_text().strip()
-                    if (Path(__file__).resolve().parents[2] / ".relay-revision").exists()
-                    else "development",
+                    "revision": os.environ.get("VIBECODING_CORE_REVISION", "development"),
                     "host_id": engine.settings.host_id,
                     "codex_running": engine.client.running,
                     "accepting": engine.accepting,
@@ -435,15 +432,22 @@ def application(engine: Engine) -> web.Application:
             )
         if path == "/projects":
             data = (
-                engine.store.register_project(body["name"], body["path"]) if body else engine.store.projects()
+                engine.store.register_project(
+                    body["name"],
+                    (await inspect_directory(engine.settings, body["path"]))["path"],
+                    validated=True,
+                )
+                if body
+                else engine.store.projects()
             )
         elif path == "/sessions":
             data = (
                 engine.store.create_session(
-                    body["cwd"],
+                    (await inspect_directory(engine.settings, body["cwd"]))["path"],
                     body.get("name", "New session"),
                     engine.settings.effort,
                     engine.settings.model,
+                    validated=True,
                 )
                 if body
                 else engine.store.sessions(request.query.get("archived") == "1")
@@ -482,8 +486,12 @@ def application(engine: Engine) -> web.Application:
                 data = engine.store.conversation(sid, int(anchor) if anchor else None)
             elif parts[2] == "details":
                 data = engine.store.details(sid)
-                usage = shutil.disk_usage(data["cwd"] if Path(data["cwd"]).exists() else Path.home())
-                data.update(host_id=engine.settings.host_id, disk_free=usage.free, disk_total=usage.total)
+                info = await inspect_directory(engine.settings, data["cwd"])
+                data.update(
+                    host_id=engine.settings.host_id,
+                    disk_free=info["disk_free"],
+                    disk_total=info["disk_total"],
+                )
             elif parts[2] == "questions":
                 data = [
                     {**q, "payload": json.loads(q["payload"])}

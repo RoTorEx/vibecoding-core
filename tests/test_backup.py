@@ -5,7 +5,7 @@ import tarfile
 import pytest
 from conftest import settle
 
-from codex_relay.cli import snapshot
+from vibecoding_core.cli import snapshot
 
 
 async def test_snapshot_restores_valid_databases_and_releases_drain(host, tmp_path):
@@ -119,3 +119,24 @@ async def test_drain_preserves_input_for_retry_instead_of_rejecting_permanently(
     await client.call("/messages", body)
     await settle(engine)
     assert engine.store.request("held")["state"] == "accepted"
+
+
+async def test_workspace_snapshot_includes_both_independent_git_sources(host, tmp_path):
+    settings, engine, native, client = host
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "workspace.toml").write_text('repositories = ["telegram-vibecoding", "vibecoding-core"]\n')
+    for name in ["telegram-vibecoding", "vibecoding-core"]:
+        repo = workspace / name
+        (repo / ".git").mkdir(parents=True)
+        (repo / "uncommitted.py").write_text(name)
+    project = engine.store.register_project("Remote Vibecoding", str(workspace))
+    target = tmp_path / "workspace.tar.gz"
+    args = argparse.Namespace(
+        destination=target, wait=0, include_codex=False, project_sources=True, config=None
+    )
+    await snapshot(settings, client, args)
+    with tarfile.open(target) as archive:
+        for name in ["telegram-vibecoding", "vibecoding-core"]:
+            stream = archive.extractfile(f"projects/{project['id']}/{name}/uncommitted.py")
+            assert stream.read().decode() == name

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Split Remote Vibecoding into independent Core and Telegram repositories in one
+  workspace and one Compose project with two containers. Preserve native host
+  execution through a dedicated forced-command SSH identity, session state and
+  independent frontend updates. Add private provisioning and host snapshot jobs.
+
 - Name the two components Telegram Vibecoding and Vibecoding Core. Update bot
   display names, bootstrap labels, native client title and service descriptions;
   add operator service aliases while retaining existing state and identifiers.

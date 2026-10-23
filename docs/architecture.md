@@ -1,89 +1,50 @@
-# Architecture
+# Remote Vibecoding architecture
 
-One repository builds two services: Telegram Vibecoding and Vibecoding Core.
-Telegram Vibecoding (Bot) polls Telegram and owns bot.db. Vibecoding Core (Engine)
-listens on a mode-0600 Unix socket, owns engine.db, and supervises one private
-Codex app-server child over stdio. Neither service opens a public listener.
-Engine session identifiers are independent of Telegram, Codex thread IDs, and
-project names. A host_id accompanies presentation and future host routing.
+One workspace under personal/apps contains two independent Git repositories.
+The workspace itself is not a third repository. Compose, common Make targets,
+workspace metadata and entrypoint links are versioned in Vibecoding Core.
 
-Operator aliases telegram-vibecoding.service and vibecoding-core.service point
-to the existing units, so there are still two running services. Historical
-codex-relay paths and internal module/CLI identifiers are retained for compatibility.
-The snapshot oneshot/timer and temporary updater maintain these components;
-they are not separate application services. Offsite backup is an existing host
-service rather than a newly introduced part of this application.
+## Two containers
 
-## Native conversation boundary
+Telegram Vibecoding owns Telegram polling, numeric-owner/private-chat checks,
+captured input, UI state and output refreshes in bot.db. It talks to Core over a
+mode-0600 Unix socket on shared host state. Production code imports no Core
+implementation. Its container receives only state and its own configuration/token.
 
-thread/start and thread/resume use never approvals and danger-full-access as
-explicitly requested. No baseInstructions or developerInstructions are supplied.
-Codex reads its native personal/project instructions. Native agent delegation
-is disabled. turn/start receives original text and localImage inputs; turn/steer
-receives subsequent messages while a turn is active. UI controls use protocol
-actions instead of injecting bot control instructions into the conversation.
-Questions from Codex remain distinct from execution permission policy.
+Vibecoding Core owns engine.db, stable session/request/event identities, native
+thread lifecycle and the versioned JSON API. Its native client invokes SSH to
+the existing developer account on the host. A dedicated forced-command SSH key
+permits the Codex app-server entrypoint and read-only host directory inspection.
+The existing SSH daemon is reused; no third executor daemon/container is added.
 
-## Persistence and ordering
+Native Codex and code-mode host remain installed on the execution host, preserving
+alex's source paths, ChatGPT authentication and sudo rights. Core's container is
+not a sandbox for the agent. It has a developer-home bind for source/credentials
+and a read-only host-root view for consistent source backups. No privileged
+container, Docker socket mount, public Core port or extra LLM is used.
 
-SQLite uses WAL, FULL synchronous commits, foreign keys and a busy timeout.
-Transactions never contain await. Telegram updates enter the inbox and advance
-the durable offset in one transaction, before the next getUpdates request.
-Unauthorized input only advances the cursor. Capture binds message input to
-its session and navigation mode; later selection changes cannot retarget it.
-An album inherits its first message's binding and collects a one-second quiet
-window. Text/image requests receive a stable Telegram update-based request ID.
+## Durability
 
-Engine records each request before acknowledging acceptance. Requests move from
-queued to dispatching to accepted, failed or uncertain. Duplicate request IDs
-must have identical session and payload. queued work may resume; dispatching
-work becomes uncertain on restart and is never automatically repeated. Native
-RPC notifications own active turn state, including a completion that arrives
-before its turn/start response. Per-session locks order sends and lifecycle
-changes without serializing independent conversations.
+SQLite WAL/FULL transactions never cross await. Captured Telegram targets cannot
+change during media download or later navigation. Stable request IDs deduplicate
+input; unknown native outcomes are never blindly replayed. Native events remain
+host-owned. Output edits the current panel and cannot retarget another session.
 
-Native completed agent messages and terminal states are durable events. Bot
-imports refresh requests into its outbox and advances its event cursor
-transactionally. Delivery edits the existing dialog panel, acknowledges only
-the captured batch after rendering, and retries failures. Background results
-remain in their native session and cannot replace the screen being viewed.
-Streaming uses the same panel. Stable exchange cursors and lossless UTF-16 part
-paging expose complete retained history without the CLI export's recent-event
-limit. Native questions and user answers are retained in that conversation.
-Operational logs exclude message payloads,
-credentials, token-bearing URLs and native stderr.
+Restart/update of the bot container preserves Core/native work, UI, inbox and
+outbox. A per-boot nonce prevents a previous container's ready PID from satisfying
+the replacement bot's healthcheck. Core/SSH/native restart can interrupt work but
+preserves conversation identity and files; arbitrary half-executed commands do not
+transparently resume.
 
-## Restart and update boundaries
+## Operations
 
-Bot restart preserves the engine, active turns, inbox, outbox, selected session
-and dialog state. Engine or Codex restart can interrupt a turn, but retains
-native history and project files. Agent tasks cannot transparently resume an
-arbitrary half-executed external operation. Unknown requests require inspection.
-An advisory host lock prevents two engines or two local bot processes from
-owning one runtime directory. Telegram conflicts with a different host fail
-rather than continuously fighting another poller.
+Common host-side operations use one explicit Compose project and commit-tagged
+images. Bot updates use --no-deps and verify Core container identity. Failed
+activation restores the prior image. Native self-updates of Core schedule an
+immutable external operator task, drain new input, wait for current work and
+then replace only Core. Rebuilding a source tree is not itself deployment proof.
 
-Installed code lives in independent bot and engine release links. A bot-only
-update cannot switch the engine link or restart its service. Engine updates
-run in an external systemd task, drain new input, and wait for idle turns before
-restarting. The deployment lock serializes updates and rollback. Data and
-credentials remain outside releases. Versioned code is copied from a clean,
-checked commit; dirty development sources are never installed implicitly.
-
-UI schema 2 replaces the previous navigation. Deployment resets only incompatible
-FSM state while the bot is stopped, on both upgrade and rollback. Selection,
-inbox/outbox, native history and project files are preserved. Compatible restarts
-keep their screen and message ID. An additive default/plan column migrates
-existing session rows without changing their IDs or native thread identities.
-Config sends native collaborationMode settings, using built-in mode instructions
-and no custom developer prompt. Changes during a turn affect the next turn.
-
-## Security and limitations
-
-The only Telegram operator is a numeric allowlisted user in their private chat.
-Bot callbacks, archived-session controls, questions and media share that check.
-The engine socket is accessible only to the developer identity. Full sudo means
-an agent can affect production services; the relay does not claim host isolation.
-A personal GitHub key can access more than the projects shown in the menu.
-No production bot token or deployment key is reused. Voice, other host
-transports and live cross-host session migration remain later work.
+Existing private state paths remain stable for the migration. The source checkout
+moves into the apps workspace; only matching project/session directory metadata
+changes, and the prior source path remains compatible. Legacy releases/config and
+a pre-cutover snapshot remain recoverable. No data is restored over a live writer.

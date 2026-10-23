@@ -3,15 +3,15 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "codex-relay"
+name = "vibecoding-core"
 version = "0.1.0"
-description = "A personal Telegram client for native, host-owned Codex conversations."
+description = "Host-owned native agent sessions for Remote Vibecoding."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["aiogram>=3.13,<4", "aiogram-dialog>=2.5,<3", "aiohttp>=3.10,<4"]
+dependencies = ["aiohttp>=3.10,<4"]
 
 [project.scripts]
-codex-relay = "codex_relay.cli:main"
+vibecoding-core = "vibecoding_core.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.12,<1", "mypy>=1.15,<2"]

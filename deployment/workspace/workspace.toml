@@ -1,0 +1,2 @@
+name = "Remote Vibecoding"
+repositories = ["telegram-vibecoding", "vibecoding-core"]

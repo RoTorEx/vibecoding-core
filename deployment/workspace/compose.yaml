@@ -1,0 +1,80 @@
+name: remote-vibecoding
+services:
+  core:
+    image: remote-vibecoding-core:${CORE_REVISION:-local}
+    build:
+      context: ${REMOTE_VIBECODING_ROOT:?}/vibecoding-core
+      args:
+        APP_UID: ${APP_UID:?}
+        APP_GID: ${APP_GID:?}
+        APP_HOME: ${APP_HOME:?}
+        REVISION: ${CORE_REVISION:-local}
+    user: "${APP_UID}:${APP_GID}"
+    init: true
+    restart: unless-stopped
+    environment:
+      HOME: ${APP_HOME}
+      VIBECODING_CORE_CONFIG: ${APP_HOME}/.config/remote-vibecoding/core.toml
+      VIBECODING_EXECUTOR_SSH_CONFIG: ${APP_HOME}/.config/remote-vibecoding/executor-ssh.conf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - type: bind
+        source: ${APP_HOME}
+        target: ${APP_HOME}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/vibecoding-core", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 45s
+  bot:
+    image: remote-vibecoding-bot:${BOT_REVISION:-local}
+    build:
+      context: ${REMOTE_VIBECODING_ROOT:?}/telegram-vibecoding
+      args:
+        APP_UID: ${APP_UID:?}
+        APP_GID: ${APP_GID:?}
+        APP_HOME: ${APP_HOME:?}
+        REVISION: ${BOT_REVISION:-local}
+    user: "${APP_UID}:${APP_GID}"
+    init: true
+    restart: unless-stopped
+    environment:
+      HOME: ${APP_HOME}
+      TELEGRAM_VIBECODING_CONFIG: ${APP_HOME}/.config/remote-vibecoding/bot.toml
+    depends_on:
+      core:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ${APP_STATE_DIR:?}
+        target: ${APP_STATE_DIR}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${APP_HOME}/.config/remote-vibecoding/bot.toml
+        target: ${APP_HOME}/.config/remote-vibecoding/bot.toml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${APP_HOME}/.config/remote-vibecoding/bot-token
+        target: ${APP_HOME}/.config/remote-vibecoding/bot-token
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/telegram-vibecoding", "--health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    stop_grace_period: 45s
