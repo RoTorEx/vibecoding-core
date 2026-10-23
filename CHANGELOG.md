@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-23
+
 - Request native public reasoning summaries, stream their sections and retain
   completed summaries in conversation history without collecting raw reasoning.
 - Publish connecting feedback and a stable elapsed-time origin before native
