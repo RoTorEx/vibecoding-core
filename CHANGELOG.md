@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-23
+
 - Expose the last completed response timestamp in session lists, independently
   of configuration changes and progress updates.
 
