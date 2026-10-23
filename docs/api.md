@@ -30,3 +30,6 @@ conversation/history include them in chronological order. Raw reasoning is not
 an application event. Agent text deltas and tool events remain separate from
 public summaries; clients must not display them as reasoning. Native protocol
 reference: https://learn.chatgpt.com/docs/app-server#item-deltas.
+
+GET /sessions also returns nullable last_response for compact response ages.
+It is derived from completed message events, excluding commentary.

@@ -122,7 +122,12 @@ class EngineStore(Database):
         return value
 
     def sessions(self, archived: bool = False) -> list[dict]:
-        return self.rows("SELECT * FROM sessions WHERE archived=? ORDER BY updated DESC", (int(archived),))
+        return self.rows(
+            "SELECT s.*, (SELECT MAX(e.created) FROM events e WHERE e.session_id=s.id "
+            "AND e.kind='message' AND COALESCE(json_extract(e.payload,'$.phase'),'')!='commentary') "
+            "AS last_response FROM sessions s WHERE archived=? ORDER BY updated DESC",
+            (int(archived),),
+        )
 
     def update_session(self, sid: str, **values) -> None:
         if set(values) - {

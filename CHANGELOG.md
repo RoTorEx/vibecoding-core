@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Expose the last completed response timestamp in session lists, independently
+  of configuration changes and progress updates.
+
 ## [0.1.2] - 2026-10-23
 
 - Request native public reasoning summaries, stream their sections and retain

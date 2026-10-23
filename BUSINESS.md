@@ -73,3 +73,9 @@ progress API and durable conversation history. Never consume raw reasoning text
 or the reasoning item's content field. Retain summary section order and preserve
 completed summaries across restarts. Publish a started timestamp while connecting
 and executing so the UI can show elapsed time without inventing an ETA.
+
+## Session activity timestamps
+
+Session lists include last_response, the timestamp of the last completed agent
+answer or plan. Commentary, public summaries, renames and settings changes do
+not make an old answer appear new. No schema or identity migration is needed.

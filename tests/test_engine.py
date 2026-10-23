@@ -292,3 +292,18 @@ async def test_connecting_feedback_exists_before_native_reply_and_clears_on_fail
     await settle(engine)
     assert s["id"] not in engine.live
     assert engine.store.session(s["id"])["status"] == "failed"
+
+
+async def test_session_list_last_response_ignores_configuration_and_progress(host):
+    settings, engine, native, client = host
+    session = await new(host)
+    assert (await client.call("/sessions"))[0]["last_response"] is None
+    engine.store.event(session["id"], "message", {"text": "Working", "phase": "commentary"})
+    engine.store.event(session["id"], "reasoning_summary", {"text": "Checking"})
+    assert (await client.call("/sessions"))[0]["last_response"] is None
+    final = engine.store.event(session["id"], "message", {"text": "Done", "phase": "final_answer"})
+    stamp = engine.store.one("SELECT created FROM events WHERE id=?", (final,))["created"]
+    engine.store.update_session(session["id"], name="Renamed")
+    listed = (await client.call("/sessions"))[0]
+    assert listed["name"] == "Renamed"
+    assert listed["last_response"] == stamp
