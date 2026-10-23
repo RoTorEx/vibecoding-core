@@ -55,3 +55,12 @@ when this repository is released. API protocol compatibility is separate from
 product versions. Follow the local Kernel release contract through make release
 and make release-push. Source package version, built metadata, CLI and runtime
 version reports must agree.
+
+## Installed copies
+
+Keep one installed image per component and one host operations script in the
+reviewed source checkout. Never cache operations code by commit directory.
+Verified activation retires obsolete images; recorded revision strings are
+source identities, not retained executable copies. Rollback rebuilds the chosen
+Git revision. A staged Core candidate is protected until the idle activation
+finishes; automatic host image cleanup must not remove that pending candidate.

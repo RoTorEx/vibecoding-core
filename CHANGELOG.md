@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use one stable host operations script, remove retired worker copies, rebuild rollbacks from Git and prune obsolete images after activation. Defer a duplicate snapshot without failing the timer.
+
 - Add independent Kernel-compliant interactive release and atomic tag publishing,
   with one canonical package version and matching CLI/build metadata.
 - Isolate deployment tests from installed host image-cleanup helpers.
