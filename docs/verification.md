@@ -90,7 +90,7 @@ reauthorization is pending in this task. Credential values are not repeated.
 
 ## Location-first UI source verification
 
-The revised source passes 40 tests, Ruff, formatting, mypy and CLI checks.
+The revised source passes 41 tests, Ruff, formatting, mypy and CLI checks.
 Actual aiogram-dialog callbacks exercise primary Settings, numbered Location
 pages, directory-scoped session/archive lists, a paired Deck/Back footer,
 Config reasoning cycles and native Plan controls, model selection, Details,
@@ -107,3 +107,35 @@ and 7.2 GB disk free. Heavy builds compete with existing services. Full alex/sud
 access and shared project directories are intentional; the bot adds no isolation
 or conflict resolution between agents editing the same file. Voice and other
 hosts remain deferred. See [operations](operations.md) for recovery commands.
+
+
+## Installed location-first UI
+
+The engine is running revision 216de0eaf4ce56184209c7947bf8e47569132517;
+the bot is running c8ca77ee719e4ffb3fb73209432c7b2da4f174ea. Both services
+are active. The bot-only corrections kept engine PID 3234522 unchanged.
+The installed Linux checks pass all 41 tests, Ruff, formatting, mypy and CLI help.
+
+Telegram accepted Main Deck as message 169. Owner-chat command descriptions were
+read back from Telegram in the Russian locale: start/menu open Main Deck, and
+stop interrupts the selected task. The same message ID is retained through
+compatible restarts and reconstruction of incompatible menu state. Phone-side
+usability remains awaiting the owner's check; publishing is not that check.
+
+Before/after reconciliation preserved all seven original session IDs, native
+thread IDs and working directories, together with all existing event, request,
+inbox and outbox rows. Real native Plan and Default acceptance turns completed
+in a reused QA thread. Its own persisted Codex turn contexts confirmed the modes
+plan, then default; the QA thread was archived again. No source edits or
+research were delegated to those smoke turns.
+
+A deployment unit test initially inherited the live VPS configuration and reset
+only its FSM/menu metadata. The test fixture is now isolated from host settings;
+all checks pass on the VPS, the menu was reattached to message 169, and the
+session/queue reconciliation was repeated. Native execution and history were
+preserved. A separate SDK foreground-context exception path was also repaired
+and verified by the failed-edit/retry test without unhandled background tasks.
+
+This deployment record is committed from the normal alex VPS checkout. Pushing
+it to main uses the new repository deploy key, with no root transport or copied
+account token. The SSH key's scope remains this one repository.
