@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-24
+
 - Expose stable terminal-outcome cursors for the frontend unread-results journal.
 
 ## [0.1.5] - 2026-10-24
