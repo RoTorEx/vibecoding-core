@@ -79,3 +79,13 @@ content. Responses include id, session_id, user_event_id, name, path, mime_type,
 size and created; attachment events include attachment_id/name/anchor. The
 conversation/history APIs retain these references. GET may filter by ?anchor=ID.
 This exports only selected files, not arbitrary tools' output or host images.
+
+POST /maintenance/retention applies the fixed seven-day local interface retention
+and returns cutoff (epoch seconds), expired event count and removed file count.
+It preserves active/pending/question sessions, native identities and request
+identity tombstones. Expired request IDs reject replay explicitly. History and
+attachment lists contain retained content only; newer attachments can have a null
+user_event_id after their original request expires. The Core runs this check
+every 15 minutes; the frontend owns cleanup of bot.db and non-attachment uploads.
+Lifetime is measured from saved timestamps, never last access. Native Codex
+history and Telegram's server-side messages are outside this contract.

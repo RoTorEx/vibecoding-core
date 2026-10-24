@@ -23,6 +23,7 @@ class Database:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA synchronous=FULL")
+        self.db.execute("PRAGMA secure_delete=ON")
         path.chmod(0o600)
 
     def close(self) -> None:
@@ -303,3 +304,53 @@ class EngineStore(Database):
             )
         with self.db:
             self.db.execute("UPDATE questions SET status='expired' WHERE status='pending'")
+
+    def expire_history(self, cutoff: float) -> dict:
+        """Expire interface content while preserving native identities and in-flight input."""
+        changes = self.db.total_changes
+        protected = {
+            r["id"]
+            for r in self.rows(
+                "SELECT id FROM sessions WHERE turn_id IS NOT NULL OR status IN "
+                "('working','waiting','connecting','transcribing') UNION "
+                "SELECT session_id FROM requests WHERE state IN ('queued','dispatching') UNION "
+                "SELECT session_id FROM questions WHERE status='pending'"
+            )
+        }
+        expired = [
+            r["id"]
+            for r in self.rows("SELECT id,session_id FROM events WHERE created<=?", (cutoff,))
+            if r["session_id"] not in protected
+        ]
+        files = [
+            r
+            for r in self.rows("SELECT * FROM attachments WHERE created<=?", (cutoff,))
+            if r["session_id"] not in protected
+        ]
+        with self.db:
+            self.db.executemany("DELETE FROM attachments WHERE id=?", [(r["id"],) for r in files])
+            # A newer image may outlive its original request. Keep its download, not a dangling FK.
+            self.db.executemany(
+                "UPDATE attachments SET user_event_id=NULL WHERE user_event_id=?", [(eid,) for eid in expired]
+            )
+            self.db.executemany("DELETE FROM events WHERE id=?", [(eid,) for eid in expired])
+            for row in self.rows(
+                "SELECT id,session_id FROM requests WHERE created<=? AND "
+                "state NOT IN ('queued','dispatching') AND payload!='{\"expired\":true}'",
+                (cutoff,),
+            ):
+                if row["session_id"] not in protected:
+                    # A small identity tombstone prevents old Telegram retries executing again.
+                    self.db.execute(
+                        "UPDATE requests SET payload='{\"expired\":true}',result=NULL WHERE id=?",
+                        (row["id"],),
+                    )
+            self.db.execute(
+                "DELETE FROM questions WHERE status!='pending' AND NOT EXISTS "
+                "(SELECT 1 FROM events WHERE kind='question' AND "
+                "json_extract(payload,'$.question_id')=questions.id)"
+            )
+        if self.db.total_changes != changes:
+            self.db.execute("VACUUM")
+            self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return {"events": len(expired), "attachments": files}

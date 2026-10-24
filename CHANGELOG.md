@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Expire local interface history and image originals seven days after saving, while preserving active work, native identities and replay protection. Add an immediate maintenance cleanup API and periodic in-process cleanup.
+
 ## [0.1.8] - 2026-10-24
 
 - Make session creation idempotent by captured request identity and directory.

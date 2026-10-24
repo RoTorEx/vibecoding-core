@@ -158,6 +158,8 @@ class Engine:
             if not p.is_file() or p.stat().st_size > 20_000_000:
                 raise ValueError("Media must be an existing file of at most 20 MB")
         if old := self.store.request(rid):
+            if json.loads(old["payload"]).get("expired"):
+                raise ValueError("Request content expired after seven days; use a new request_id")
             if old["session_id"] != sid or json.loads(old["payload"]) != payload:
                 raise ValueError("request_id already belongs to a different message")
             return {"request_id": rid, "state": old["state"]}
@@ -604,6 +606,52 @@ class Engine:
         await self.client.close()
         self.store.close()
 
+    def expire_history(self, now: float | None = None) -> dict:
+        cutoff = (time.time() if now is None else now) - 7 * 86400
+        result = self.store.expire_history(cutoff)
+        root = (self.settings.data_dir / "uploads").resolve()
+        removed = 0
+        for row in result.pop("attachments"):
+            path = Path(row["path"])
+            if path.parent.resolve().is_relative_to(root):
+                path.unlink(missing_ok=True)
+                removed += 1
+        protected = {
+            s["id"]
+            for s in self.store.sessions()
+            if s.get("turn_id")
+            or s.get("pending_requests")
+            or s.get("pending_questions")
+            or s["status"] in {"working", "waiting", "connecting", "transcribing"}
+        }
+        referenced = {r["path"] for r in self.store.rows("SELECT path FROM attachments")}
+        # Retry orphan removal after a crash between the database commit and unlink.
+        for directory in root.glob("*/attachments"):
+            if (
+                directory.parent.name in protected
+                or directory.is_symlink()
+                or not directory.resolve().is_relative_to(root)
+            ):
+                continue
+            for path in directory.iterdir():
+                if (
+                    path.is_file()
+                    and not path.is_symlink()
+                    and str(path) not in referenced
+                    and path.stat().st_mtime <= cutoff
+                ):
+                    path.unlink()
+                    removed += 1
+        return {**result, "files": removed, "cutoff": cutoff}
+
+    async def retention_loop(self) -> None:
+        while True:
+            await asyncio.sleep(900)
+            try:
+                log.info("History retention: %s", self.expire_history())
+            except Exception as exc:
+                log.warning("History retention will retry: %s", type(exc).__name__)
+
 
 @web.middleware
 async def errors(request, handler):
@@ -622,6 +670,14 @@ async def errors(request, handler):
 
 def application(engine: Engine) -> web.Application:
     app = web.Application(middlewares=[errors], client_max_size=2 * 1024 * 1024)
+
+    async def retention_context(app):
+        task = asyncio.create_task(engine.retention_loop())
+        yield
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    app.cleanup_ctx.append(retention_context)
 
     async def api(request):
         path = request.path
@@ -678,6 +734,8 @@ def application(engine: Engine) -> web.Application:
         elif path == "/models":
             await engine.client.start()
             data = await engine.client.request("model/list", {})
+        elif path == "/maintenance/retention" and request.method == "POST":
+            data = engine.expire_history()
         elif path == "/limits":
             data = await engine.limits()
         elif path == "/account":

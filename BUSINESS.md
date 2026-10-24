@@ -157,3 +157,24 @@ Only user events from that session can be anchors. The attachment event/history
 reference lets the frontend deliver and browse downloads after restart. Native
 work and original source files are not modified. Backups retain these files via
 the existing private uploads and online database snapshot paths.
+
+## Seven-day interface history
+
+Expire local interface events, transcripts, completed request bodies and
+registered image originals 604800 seconds (seven 24-hour days) after saving.
+Reads and retries never renew this lifetime. Check every 900 seconds (15
+minutes) within Core; POST /maintenance/retention supports an immediate operator
+check. The frontend independently expires its own transport copies and intake
+files through the API contract, without importing Core or writing engine.db.
+All interface state lives in configured data_dir: engine.db, bot.db and uploads.
+
+Protect sessions with active native turns, pending input/preprocessing or native
+questions until resolved. Preserve session/thread identity, settings and compact
+request tombstones so expired retries cannot execute again. Remove dangling
+image anchors safely; a newer image remains downloadable after its older request
+expires. Compact SQLite after content removal and retry stale orphan attachment
+file cleanup after crashes. Delete only Core-owned uploads, never outside paths
+or symlink targets. Existing backup retention, project/source files, auth, model
+weights and native Codex context/history are outside this interface cleanup.
+Tests cover cutoff boundaries, native identity, deduplication, pending/active
+work, attachment FKs, newer images and interrupted file cleanup.
