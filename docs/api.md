@@ -41,3 +41,8 @@ Conversation replies include transcriptions matched to the original request even
 if later inputs arrived before recognition finished. Clients display transcripts
 as user input. Session status transcribing and live activity Transcribing indicate
 local preprocessing; the native agent has not received that voice input yet.
+
+GET /sessions additionally returns nullable last_completed_event, the newest
+completed event ID for that session. It is a monotonic terminal-outcome cursor,
+including failed/interrupted outcomes, distinct from last_response timestamps.
+Clients persist their own viewed cursor and acknowledge only the presented ID.

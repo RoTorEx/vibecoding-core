@@ -406,3 +406,17 @@ async def test_voice_failure_does_not_start_native_work(host):
     assert engine.store.request("bad-voice")["state"] == "failed"
     assert engine.store.session(s["id"])["status"] == "failed"
     assert not native.calls
+
+
+async def test_completion_cursor_distinguishes_new_outcomes_from_metadata(host):
+    settings, engine, native, client = host
+    s = await new(host)
+    sid = s["id"]
+    assert (await client.call("/sessions"))[0]["last_completed_event"] is None
+    engine.store.event(sid, "message", {"text": "Partial", "phase": "commentary"})
+    assert (await client.call("/sessions"))[0]["last_completed_event"] is None
+    first = engine.store.event(sid, "completed", {"status": "completed"})
+    engine.store.update_session(sid, name="Renamed")
+    assert (await client.call("/sessions"))[0]["last_completed_event"] == first
+    second = engine.store.event(sid, "completed", {"status": "failed"})
+    assert (await client.call("/sessions"))[0]["last_completed_event"] == second > first

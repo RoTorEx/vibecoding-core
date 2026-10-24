@@ -22,7 +22,9 @@ turn. Steering appends input to the active turn. Stop interrupts; Close stops
 and archives without deleting files. Multiple sessions share project files.
 
 The host account, home directory and source paths retain their host semantics
-inside the containerized control plane. Native commands execute on the host,
+inside the containerized control plane. Host GitHub access uses the normal alex
+account SSH key and authenticated gh CLI, without a Core repository allowlist.
+Native commands execute on the host,
 not in the Core container. No Docker socket, privileged container or host PID
 namespace is needed for that access.
 
@@ -106,3 +108,11 @@ Use scripts/install_speech_model.py to install the pinned model. Runtime model
 loading is offline. Transcription events record recording duration, elapsed time,
 CPU seconds and process peak RSS for load assessment. Tests cover captured input,
 cache/retry, parallel text work, failure, cancellation and restart boundaries.
+
+## Completed-result visibility
+
+Session lists expose last_completed_event, the latest terminal event ID, for the
+frontend's unread-results journal. This includes failed/interrupted turns so the
+owner can inspect their outcome. Native session metadata edits never advance it.
+Core does not infer Telegram read receipts; the frontend owns explicit viewing
+cursors. Closed sessions stay retained and leave the active-results journal.

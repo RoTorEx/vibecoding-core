@@ -125,7 +125,9 @@ class EngineStore(Database):
         return self.rows(
             "SELECT s.*, (SELECT MAX(e.created) FROM events e WHERE e.session_id=s.id "
             "AND e.kind='message' AND COALESCE(json_extract(e.payload,'$.phase'),'')!='commentary') "
-            "AS last_response FROM sessions s WHERE archived=? ORDER BY updated DESC",
+            "AS last_response, (SELECT MAX(e.id) FROM events e WHERE e.session_id=s.id "
+            "AND e.kind='completed') AS last_completed_event "
+            "FROM sessions s WHERE archived=? ORDER BY updated DESC",
             (int(archived),),
         )
 

@@ -110,3 +110,23 @@ entities for the retained answer, with no raw bold markers or table separators.
 A deleted temporary owner-only message verified bold, italic, strikethrough,
 links, inline code and preformatted code. Core was not restarted by that frontend
 acceptance check. The final deployment retains exactly two healthy containers.
+
+## GitHub access on the execution host
+
+Native agents run as alex and use that host account's normal Git/SSH and GitHub
+CLI configuration. The VPS GitHub identity is RoTorEx. github.com selects
+~/.ssh/id_ed25519_github_account, an account authentication key; it is not limited
+to one deployment repository. Existing repository-specific aliases remain valid.
+GitHub CLI is separately authorized in ~/.config/gh for repositories, workflows
+and SSH-key registration. These private files stay outside all source trees.
+
+Use `gh api user --jq .login`, `gh repo list RoTorEx` and the repository's actual
+URL rather than guessing names. Telegram Node Radar is the private
+RoTorEx/telegram-node-radar repository; /srv/telegram-node-radar is its deployed
+runtime, not necessarily a Git source checkout. GitHub's account permissions and
+repository rules still apply. Credentials are not a reason to bypass those rules.
+
+New-host recovery requires deliberate GitHub device authorization and registration
+of that host's own public key. Never copy a Mac private SSH key or write tokens
+into commands, logs, Git remotes or project files. This setup does not register
+GitHub credentials for offsite backup or modify the backup producer's credentials.
