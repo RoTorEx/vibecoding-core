@@ -472,3 +472,82 @@ async def test_question_counts_and_status_follow_all_pending_native_requests(hos
     listed = (await client.call("/sessions"))[0]
     assert listed["pending_questions"] == 0 and listed["status"] == "working"
     assert listed["turn_id"] == "turn-overview"
+
+
+async def test_native_limits_cache_updates_and_unavailable_do_not_run_turns(host):
+    settings, engine, native, client = host
+    original = native.request
+    calls = []
+
+    async def request(method, params, **kwargs):
+        if method == "account/rateLimits/read":
+            calls.append(method)
+            return {
+                "rateLimits": {
+                    "limitId": "codex",
+                    "primary": {"usedPercent": 23, "windowDurationMins": 300, "resetsAt": 1792900000},
+                }
+            }
+        return await original(method, params, **kwargs)
+
+    native.request = request
+    first = await client.call("/limits")
+    assert first["available"] and first["rateLimits"]["primary"]["usedPercent"] == 23
+    assert await client.call("/limits") == first and len(calls) == 1
+    engine.on_event(
+        "account/rateLimits/updated", {"rateLimits": {"limitId": "other", "primary": {"usedPercent": 40}}}
+    )
+    updated = await client.call("/limits")
+    assert updated["rateLimitsByLimitId"]["other"]["primary"]["usedPercent"] == 40
+    engine.limits_checked = 0
+    native.fail_method = "account/rateLimits/read"
+    native.failure = ConnectionError("offline")
+    native.request = original
+    assert not (await client.call("/limits"))["available"]
+    assert not any(method == "turn/start" for method, _ in native.calls)
+
+
+async def test_session_creation_request_id_keeps_target_across_retries(host, tmp_path):
+    settings, engine, native, client = host
+    body = {"cwd": str(tmp_path), "request_id": "telegram:new:123"}
+    first = await client.call("/sessions", body)
+    engine.store.update_session(first["id"], name="Already renamed")
+    second = await client.call("/sessions", body)
+    assert second["id"] == first["id"] and second["name"] == "Already renamed"
+    other = tmp_path / "other"
+    other.mkdir()
+    with pytest.raises(ValueError, match="different directory"):
+        await client.call("/sessions", {**body, "cwd": str(other)})
+    assert len(engine.store.sessions()) == 1
+
+
+async def test_attachment_registration_copies_image_and_preserves_request_history(host, tmp_path):
+    settings, engine, native, client = host
+    session = await new(host)
+    sid = session["id"]
+    anchor = engine.store.event(sid, "user", {"text": "Draw this"})
+    image = tmp_path / "avatar.png"
+    original = b"\x89PNG\r\n\x1a\nfixture-image-content"
+    image.write_bytes(original)
+    body = {"path": str(image), "anchor": anchor}
+    record = await client.call(f"/sessions/{sid}/attachments", body)
+    assert await client.call(f"/sessions/{sid}/attachments", body) == record
+    from pathlib import Path
+
+    assert Path(record["path"]).read_bytes() == original
+    assert Path(record["path"]).stat().st_mode & 0o777 == 0o600
+    image.unlink()
+    assert Path(record["path"]).read_bytes() == original
+    assert len(await client.call(f"/sessions/{sid}/attachments?anchor={anchor}")) == 1
+    conversation = await client.call(f"/sessions/{sid}/conversation")
+    assert any(
+        e["kind"] == "attachment" and e["payload"]["attachment_id"] == record["id"]
+        for e in conversation["replies"]
+    )
+    bad = tmp_path / "not-an-image.png"
+    bad.write_text("Keep private files private")
+    with pytest.raises(ValueError, match="PNG"):
+        await client.call(f"/sessions/{sid}/attachments", {"path": str(bad)})
+    other = await new(host, "Other")
+    with pytest.raises(ValueError, match="anchor"):
+        await client.call(f"/sessions/{other['id']}/attachments", {"path": record["path"], "anchor": anchor})

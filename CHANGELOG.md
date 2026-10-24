@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Make session creation idempotent by captured request identity and directory.
+- Register explicitly selected image originals in private request-scoped attachment history for durable Telegram download.
+
+- Expose read-only native Codex account usage limits and reset times, with short caching and explicit unavailable states.
+
 ## [0.1.7] - 2026-10-24
 
 - Keep question-waiting status until all native questions resolve, including server resolution notifications without a thread ID.

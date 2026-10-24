@@ -1,5 +1,6 @@
 """Small transactional stores. No database transaction crosses an await."""
 
+import hashlib
 import json
 import sqlite3
 import time
@@ -61,6 +62,10 @@ class EngineStore(Database):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT REFERENCES sessions(id), kind TEXT NOT NULL,
                 payload TEXT NOT NULL, created REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS attachments(
+                id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
+                user_event_id INTEGER REFERENCES events(id), name TEXT NOT NULL, path TEXT NOT NULL,
+                mime_type TEXT NOT NULL, size INTEGER NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS questions(
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
                 rpc_id TEXT NOT NULL, method TEXT NOT NULL, payload TEXT NOT NULL,
@@ -91,17 +96,37 @@ class EngineStore(Database):
         return self.rows("SELECT * FROM projects WHERE enabled=1 ORDER BY name COLLATE NOCASE")
 
     def create_session(
-        self, cwd: str, name: str, effort: str, model: str | None = None, *, validated=False
+        self,
+        cwd: str,
+        name: str,
+        effort: str,
+        model: str | None = None,
+        *,
+        validated=False,
+        request_id: str | None = None,
     ) -> dict:
         path = Path(cwd) if validated else Path(cwd).expanduser().resolve(strict=True)
         if not path.is_absolute() or (not validated and not path.is_dir()):
             raise ValueError("Working directory is not a directory")
+        if request_id is not None and (
+            not isinstance(request_id, str) or not request_id or len(request_id) > 200
+        ):
+            raise ValueError("Session request_id must contain 1–200 characters")
+        sid = (
+            hashlib.sha256(("session:" + request_id).encode()).hexdigest()[:16]
+            if request_id
+            else identifier()
+        )
+        existing = self.one("SELECT * FROM sessions WHERE id=?", (sid,))
+        if existing:
+            if existing["cwd"] != str(path):
+                raise ValueError("Session request_id belongs to a different directory")
+            return existing
         if validated:
             if not self.one("SELECT id FROM projects WHERE path=?", (str(path),)):
                 self.register_project(path.name or "/", str(path), validated=True)
         else:
             self.register_session_location(path)
-        sid = identifier()
         now = time.time()
         with self.db:
             self.db.execute(
@@ -128,7 +153,7 @@ class EngineStore(Database):
             "AS last_response, (SELECT MAX(e.id) FROM events e WHERE e.session_id=s.id "
             "AND e.kind='completed') AS last_completed_event, "
             "MAX(s.updated, COALESCE((SELECT MAX(e.created) FROM events e WHERE e.session_id=s.id "
-            "AND (e.kind IN ('user','question','completed') OR (e.kind='message' "
+            "AND (e.kind IN ('user','question','completed','attachment') OR (e.kind='message' "
             "AND COALESCE(json_extract(e.payload,'$.phase'),'')!='commentary'))), s.created)) "
             "AS last_interaction, "
             "(SELECT COUNT(*) FROM questions q WHERE q.session_id=s.id AND q.status='pending') "
@@ -179,7 +204,7 @@ class EngineStore(Database):
             {**r, "payload": json.loads(r["payload"])}
             for r in self.rows(
                 "SELECT * FROM (SELECT * FROM events WHERE session_id=? AND kind IN "
-                "('user','message','reasoning_summary','completed','error','question') ORDER BY id DESC LIMIT 200) ORDER BY id",
+                "('user','message','reasoning_summary','completed','error','question','attachment') ORDER BY id DESC LIMIT 200) ORDER BY id",
                 (sid,),
             )
         ]
@@ -205,7 +230,7 @@ class EngineStore(Database):
         )
         replies = self.rows(
             "SELECT * FROM events WHERE session_id=? AND id>? AND id<? "
-            "AND kind IN ('message','reasoning_summary','error','completed','question') ORDER BY id",
+            "AND kind IN ('message','reasoning_summary','error','completed','question','attachment') ORDER BY id",
             (sid, user["id"], following["id"] if following else 9223372036854775807),
         )
         user_payload = json.loads(user["payload"])

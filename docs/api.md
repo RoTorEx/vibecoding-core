@@ -55,3 +55,27 @@ outcomes. Public progress and tool output do not advance it. Pending requests
 count queued/dispatching inputs; pending questions include native user-input and
 MCP elicitation requests. Clients combine these with status, turn_id and /live
 activity, and retain unfamiliar statuses instead of claiming they are idle.
+
+GET /limits reads native account/rateLimits/read without running an inference
+turn. It preserves rateLimits and rateLimitsByLimitId, adds available and
+checked_at (epoch seconds), and caches the result for 60 seconds to avoid
+provider reads on every menu animation. Native account/rateLimits/updated
+refreshes the cache between reads. Unknown/unsupported/unavailable limits are
+available=false, never an inferred unused quota. The endpoint cannot consume
+reset credits, buy credits, or change account settings. Schema reference:
+https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt.
+
+POST /sessions accepts optional request_id for idempotent creation. Reusing it
+returns the original session without changing its name/settings; changing the
+captured directory is rejected. Telegram uses this for New callbacks and input
+sent from a location's session list before downloads/native execution.
+
+GET/POST /sessions/{id}/attachments lists/registers image originals. POST supplies
+an absolute host path, optional name and optional anchor (a user event in this
+session; defaults to the latest user event). Only explicit PNG/JPEG/WebP sources
+up to 20 MB are accepted. The producer must retain its anchor on retries. Core
+copies bytes into private shared uploads and deduplicates by session, anchor and
+content. Responses include id, session_id, user_event_id, name, path, mime_type,
+size and created; attachment events include attachment_id/name/anchor. The
+conversation/history APIs retain these references. GET may filter by ?anchor=ID.
+This exports only selected files, not arbitrary tools' output or host images.

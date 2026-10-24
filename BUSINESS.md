@@ -122,7 +122,7 @@ cursors. Closed sessions stay retained and leave the active-results journal.
 All active and archived session lists sort by latest interaction, newest first,
 with stable ID tie-breaking. last_interaction includes metadata changes, captured
 input (including steering and question answers), final answers/plans, questions
-and terminal outcomes; tool output and public progress do not reorder the list.
+image attachments and terminal outcomes; tool output and public progress do not reorder the list.
 The additive pending_requests and pending_questions counts expose queued input
 and unresolved user-input/MCP requests without inferring them from turn IDs.
 No session identity or schema migration is required.
@@ -131,3 +131,29 @@ A session remains waiting while any native user-input or MCP elicitation request
 is pending. Server resolution notifications identify questions by RPC request ID
 without requiring threadId. Resolving one of several questions does not return
 the session to Working prematurely.
+
+## Account limits
+
+The read-only /limits API exposes the authenticated native Codex account's actual
+quota buckets, usage percentages and Unix-second reset timestamps. It issues no
+inference request and never consumes earned resets or credits. Cache reads for
+60 seconds because menus refresh frequently; native limit-update notifications
+refresh the cached values immediately. Unsupported/missing/error states are
+explicitly unavailable rather than invented remaining usage. Tests protect
+multiple buckets, updates, missing data and read failure without native turns.
+
+## Session creation and image originals
+
+A stable optional creation request_id binds one intent to one directory/session,
+including retries while incoming voice is downloaded or recognized. Reusing it
+must not rename or duplicate that session; another directory is rejected before
+registration. This leaves existing native identities unchanged.
+
+Explicit image attachment registration copies PNG/JPEG/WebP originals (at most
+20 MB, matching the interface's bounded media policy) into private uploads. Bind
+each image to its session and optional original user-event anchor; deduplicate
+content retries and preserve bytes after the source file changes or disappears.
+Only user events from that session can be anchors. The attachment event/history
+reference lets the frontend deliver and browse downloads after restart. Native
+work and original source files are not modified. Backups retain these files via
+the existing private uploads and online database snapshot paths.

@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -37,6 +38,77 @@ class Engine:
         self.accepting = True
         self.speech = Speech(settings.speech_model_dir.expanduser())
         self.preprocessing: dict[str, asyncio.Task] = {}
+        self.limits_cache: dict = {}
+        self.limits_checked = 0.0
+        self.limits_lock = asyncio.Lock()
+
+    def attachments(self, sid: str, anchor: int | None = None) -> list[dict]:
+        self.store.session(sid)
+        sql = "SELECT * FROM attachments WHERE session_id=?"
+        values: tuple = (sid,)
+        if anchor is not None:
+            sql += " AND (user_event_id=? OR user_event_id IS NULL)"
+            values = (sid, anchor)
+        return self.store.rows(sql + " ORDER BY created,id", values)
+
+    def attach(self, sid: str, body: dict) -> dict:
+        self.store.session(sid)
+        path = Path(body["path"]).expanduser()
+        if not path.is_absolute():
+            raise ValueError("Use an absolute host image path")
+        source = self.settings.host_path(path)
+        if not source.is_file() or source.stat().st_size > 20_000_000:
+            raise ValueError("Image must be an existing file of at most 20 MB")
+        with source.open("rb") as stream:
+            data = stream.read(20_000_001)
+        if not data or len(data) > 20_000_000:
+            raise ValueError("Image is empty or exceeds 20 MB")
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            suffix, mime = ".png", "image/png"
+        elif data.startswith(b"\xff\xd8\xff"):
+            suffix, mime = ".jpg", "image/jpeg"
+        elif data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            suffix, mime = ".webp", "image/webp"
+        else:
+            raise ValueError("Use a PNG, JPEG or WebP image")
+        latest = self.store.conversation(sid)["user"]
+        anchor = body.get("anchor", latest["id"] if latest else None)
+        if anchor is not None and not self.store.one(
+            "SELECT id FROM events WHERE id=? AND session_id=? AND kind='user'", (anchor, sid)
+        ):
+            raise ValueError("Attachment anchor must be a user request in this session")
+        aid = hashlib.sha256(sid.encode() + str(anchor).encode() + data).hexdigest()[:16]
+        existing = self.store.one("SELECT * FROM attachments WHERE id=?", (aid,))
+        if existing:
+            return existing
+        name = Path(str(body.get("name") or path.name)).name[:100]
+        directory = self.settings.data_dir / "uploads" / sid / "attachments"
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        target = directory / (aid + suffix)
+        temporary = target.with_suffix(".part")
+        temporary.write_bytes(data)
+        temporary.chmod(0o600)
+        temporary.replace(target)
+        with self.store.db:
+            self.store.db.execute(
+                "INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?)",
+                (aid, sid, anchor, name, str(target), mime, len(data), time.time()),
+            )
+            self.store.event(sid, "attachment", {"attachment_id": aid, "name": name, "anchor": anchor})
+        return self.store.one("SELECT * FROM attachments WHERE id=?", (aid,)) or {}
+
+    async def limits(self) -> dict:
+        async with self.limits_lock:
+            if not self.limits_cache or time.monotonic() - self.limits_checked >= 60:
+                try:
+                    await self.client.start()
+                    result = await self.client.request("account/rateLimits/read", {}, timeout=10)
+                    available = bool(result.get("rateLimits") or result.get("rateLimitsByLimitId"))
+                    self.limits_cache = {**result, "available": available, "checked_at": time.time()}
+                except (RpcError, UnknownOutcome, ConnectionError, TimeoutError):
+                    self.limits_cache = {"available": False, "checked_at": time.time()}
+                self.limits_checked = time.monotonic()
+            return self.limits_cache
 
     def spawn(self, coro) -> None:
         task = asyncio.create_task(coro)
@@ -242,6 +314,21 @@ class Engine:
         return self.store.one("SELECT * FROM sessions WHERE thread_id=?", (thread_id,))
 
     def on_event(self, method: str, params: dict) -> None:
+        if method == "account/rateLimits/updated":
+            bucket = params.get("rateLimits")
+            buckets = dict(self.limits_cache.get("rateLimitsByLimitId") or {})
+            if bucket and bucket.get("limitId"):
+                buckets[bucket["limitId"]] = bucket
+            self.limits_cache = {
+                **self.limits_cache,
+                **params,
+                "available": bool(bucket or buckets),
+                "checked_at": time.time(),
+            }
+            if buckets:
+                self.limits_cache["rateLimitsByLimitId"] = buckets
+            self.limits_checked = time.monotonic()
+            return
         if method == "serverRequest/resolved":
             question = self.store.one(
                 "SELECT * FROM questions WHERE rpc_id=? AND status='pending'",
@@ -573,6 +660,7 @@ def application(engine: Engine) -> web.Application:
                     engine.settings.effort,
                     engine.settings.model,
                     validated=True,
+                    request_id=body.get("request_id"),
                 )
                 if body
                 else engine.store.sessions(request.query.get("archived") == "1")
@@ -590,6 +678,8 @@ def application(engine: Engine) -> web.Application:
         elif path == "/models":
             await engine.client.start()
             data = await engine.client.request("model/list", {})
+        elif path == "/limits":
+            data = await engine.limits()
         elif path == "/account":
             await engine.client.start()
             result = await engine.client.request("account/read", {})
@@ -616,6 +706,13 @@ def application(engine: Engine) -> web.Application:
                     host_id=engine.settings.host_id,
                     disk_free=info["disk_free"],
                     disk_total=info["disk_total"],
+                )
+            elif parts[2] == "attachments":
+                anchor = request.query.get("anchor")
+                data = (
+                    engine.attach(sid, body)
+                    if request.method == "POST"
+                    else engine.attachments(sid, int(anchor) if anchor else None)
                 )
             elif parts[2] == "questions":
                 data = [
