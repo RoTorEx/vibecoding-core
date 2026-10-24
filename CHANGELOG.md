@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-24
+
 - Keep question-waiting status until all native questions resolve, including server resolution notifications without a thread ID.
 - Expose latest interaction timestamps, pending input and pending question counts; sort active and archived sessions consistently by latest interaction.
 
