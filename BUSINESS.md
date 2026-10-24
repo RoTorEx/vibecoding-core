@@ -116,3 +116,18 @@ frontend's unread-results journal. This includes failed/interrupted turns so the
 owner can inspect their outcome. Native session metadata edits never advance it.
 Core does not infer Telegram read receipts; the frontend owns explicit viewing
 cursors. Closed sessions stay retained and leave the active-results journal.
+
+## Session overview contract
+
+All active and archived session lists sort by latest interaction, newest first,
+with stable ID tie-breaking. last_interaction includes metadata changes, captured
+input (including steering and question answers), final answers/plans, questions
+and terminal outcomes; tool output and public progress do not reorder the list.
+The additive pending_requests and pending_questions counts expose queued input
+and unresolved user-input/MCP requests without inferring them from turn IDs.
+No session identity or schema migration is required.
+
+A session remains waiting while any native user-input or MCP elicitation request
+is pending. Server resolution notifications identify questions by RPC request ID
+without requiring threadId. Resolving one of several questions does not return
+the session to Working prematurely.

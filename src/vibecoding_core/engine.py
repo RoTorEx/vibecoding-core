@@ -242,6 +242,18 @@ class Engine:
         return self.store.one("SELECT * FROM sessions WHERE thread_id=?", (thread_id,))
 
     def on_event(self, method: str, params: dict) -> None:
+        if method == "serverRequest/resolved":
+            question = self.store.one(
+                "SELECT * FROM questions WHERE rpc_id=? AND status='pending'",
+                (json.dumps(params.get("requestId")),),
+            )
+            if question:
+                with self.store.db:
+                    self.store.db.execute(
+                        "UPDATE questions SET status='resolved' WHERE id=?", (question["id"],)
+                    )
+                self.refresh_question_status(question["session_id"])
+            return
         s = self.session_for_thread(params.get("threadId"))
         if not s:
             return
@@ -312,12 +324,14 @@ class Engine:
         elif method == "error":
             error = params.get("error") or {}
             self.store.event(sid, "error", {"text": error.get("message", "Codex reported an error")})
-        elif method == "serverRequest/resolved":
-            with self.store.db:
-                self.store.db.execute(
-                    "UPDATE questions SET status='resolved' WHERE rpc_id=?",
-                    (json.dumps(params.get("requestId")),),
-                )
+
+    def refresh_question_status(self, sid: str) -> None:
+        session = self.store.session(sid)
+        pending = self.store.one("SELECT id FROM questions WHERE session_id=? AND status='pending'", (sid,))
+        if pending:
+            self.store.update_session(sid, status="waiting")
+        elif session["status"] == "waiting":
+            self.store.update_session(sid, status="working" if session["turn_id"] else "idle")
 
     def finish_summary(self, sid: str, item_id: str, summary: list | None = None) -> None:
         pending = self.live.get(sid, {}).get("summaries", {}).pop(item_id, {})
@@ -390,7 +404,7 @@ class Engine:
         await self.client.respond(json.loads(q["rpc_id"]), result)
         with self.store.db:
             self.store.db.execute("UPDATE questions SET status='resolved' WHERE id=?", (qid,))
-        self.store.update_session(q["session_id"], status="working")
+        self.refresh_question_status(q["session_id"])
         self.store.event(
             q["session_id"],
             "user",

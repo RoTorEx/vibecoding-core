@@ -420,3 +420,55 @@ async def test_completion_cursor_distinguishes_new_outcomes_from_metadata(host):
     assert (await client.call("/sessions"))[0]["last_completed_event"] == first
     second = engine.store.event(sid, "completed", {"status": "failed"})
     assert (await client.call("/sessions"))[0]["last_completed_event"] == second > first
+
+
+async def test_session_overview_orders_captured_input_and_excludes_progress(host):
+    settings, engine, native, client = host
+    a, b = await new(host, "A"), await new(host, "B")
+    with engine.store.db:
+        engine.store.db.execute("UPDATE sessions SET created=1,updated=1 WHERE id=?", (a["id"],))
+        engine.store.db.execute("UPDATE sessions SET created=2,updated=2 WHERE id=?", (b["id"],))
+    assert [s["id"] for s in await client.call("/sessions")] == [b["id"], a["id"]]
+    event = engine.store.event(a["id"], "user", {"text": "A followup"})
+    engine.store.accept("pending", a["id"], {"text": "A followup"})
+    listed = (await client.call("/sessions"))[0]
+    assert listed["id"] == a["id"] and listed["pending_requests"] == 1
+    assert (
+        listed["last_interaction"]
+        == engine.store.one("SELECT created FROM events WHERE id=?", (event,))["created"]
+    )
+    engine.store.event(b["id"], "reasoning_summary", {"text": "Still working"})
+    engine.store.event(b["id"], "message", {"text": "Progress", "phase": "commentary"})
+    engine.store.event(b["id"], "tool", {"item": {}})
+    assert (await client.call("/sessions"))[0]["id"] == a["id"]
+    engine.store.request_state("pending", "accepted")
+    assert (await client.call("/sessions"))[0]["pending_requests"] == 0
+    engine.store.event(b["id"], "message", {"text": "Finished", "phase": "final_answer"})
+    assert (await client.call("/sessions"))[0]["id"] == b["id"]
+    for session in [a, b]:
+        engine.store.update_session(session["id"], archived=1)
+    archived = await client.call("/sessions?archived=1")
+    assert archived[0]["last_interaction"] >= archived[1]["last_interaction"]
+
+
+async def test_question_counts_and_status_follow_all_pending_native_requests(host):
+    settings, engine, native, client = host
+    s = await new(host)
+    engine.store.update_session(
+        s["id"], thread_id="thread-overview", turn_id="turn-overview", status="working"
+    )
+    for rid in [71, 72]:
+        engine.on_request(
+            rid,
+            "item/tool/requestUserInput",
+            {"threadId": "thread-overview", "questions": [{"id": str(rid), "question": "Choose"}]},
+        )
+    assert (await client.call("/sessions"))[0]["pending_questions"] == 2
+    questions = await client.call(f"/sessions/{s['id']}/questions")
+    await client.call(f"/questions/{questions[0]['id']}", {"answers": {"71": "Yes"}})
+    listed = (await client.call("/sessions"))[0]
+    assert listed["pending_questions"] == 1 and listed["status"] == "waiting"
+    engine.on_event("serverRequest/resolved", {"requestId": 72})
+    listed = (await client.call("/sessions"))[0]
+    assert listed["pending_questions"] == 0 and listed["status"] == "working"
+    assert listed["turn_id"] == "turn-overview"

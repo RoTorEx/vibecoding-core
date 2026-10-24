@@ -126,8 +126,16 @@ class EngineStore(Database):
             "SELECT s.*, (SELECT MAX(e.created) FROM events e WHERE e.session_id=s.id "
             "AND e.kind='message' AND COALESCE(json_extract(e.payload,'$.phase'),'')!='commentary') "
             "AS last_response, (SELECT MAX(e.id) FROM events e WHERE e.session_id=s.id "
-            "AND e.kind='completed') AS last_completed_event "
-            "FROM sessions s WHERE archived=? ORDER BY updated DESC",
+            "AND e.kind='completed') AS last_completed_event, "
+            "MAX(s.updated, COALESCE((SELECT MAX(e.created) FROM events e WHERE e.session_id=s.id "
+            "AND (e.kind IN ('user','question','completed') OR (e.kind='message' "
+            "AND COALESCE(json_extract(e.payload,'$.phase'),'')!='commentary'))), s.created)) "
+            "AS last_interaction, "
+            "(SELECT COUNT(*) FROM questions q WHERE q.session_id=s.id AND q.status='pending') "
+            "AS pending_questions, "
+            "(SELECT COUNT(*) FROM requests r WHERE r.session_id=s.id "
+            "AND r.state IN ('queued','dispatching')) AS pending_requests "
+            "FROM sessions s WHERE archived=? ORDER BY last_interaction DESC, s.id DESC",
             (int(archived),),
         )
 

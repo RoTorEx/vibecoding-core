@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Keep question-waiting status until all native questions resolve, including server resolution notifications without a thread ID.
+- Expose latest interaction timestamps, pending input and pending question counts; sort active and archived sessions consistently by latest interaction.
+
 ## [0.1.6] - 2026-10-24
 
 - Expose stable terminal-outcome cursors for the frontend unread-results journal.

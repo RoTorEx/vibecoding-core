@@ -46,3 +46,12 @@ GET /sessions additionally returns nullable last_completed_event, the newest
 completed event ID for that session. It is a monotonic terminal-outcome cursor,
 including failed/interrupted outcomes, distinct from last_response timestamps.
 Clients persist their own viewed cursor and acknowledge only the presented ID.
+
+GET /sessions includes last_interaction (epoch seconds), pending_questions and
+pending_requests. Lists, including archived lists, sort by last_interaction
+descending with stable ID tie-breaking. Interaction time includes session
+metadata changes, captured input, final answers/plans, questions and terminal
+outcomes. Public progress and tool output do not advance it. Pending requests
+count queued/dispatching inputs; pending questions include native user-input and
+MCP elicitation requests. Clients combine these with status, turn_id and /live
+activity, and retain unfamiliar statuses instead of claiming they are idle.
