@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-24
+
 - Make session creation idempotent by captured request identity and directory.
 - Register explicitly selected image originals in private request-scoped attachment history for durable Telegram download.
 
