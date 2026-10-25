@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-26
+
 - Publish the Telegram request-confirmation endpoint only on host loopback port 8790 for an explicitly configured private HTTPS gateway; Core's trusted Unix API remains unexposed.
 
 ## [0.1.10] - 2026-10-25
