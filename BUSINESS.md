@@ -12,6 +12,11 @@ daemon, as alex with the owner's existing sudo rights. The SSH executor is a
 short-lived entrypoint, not another permanent service. Each future execution
 host owns its state; live cross-host session migration is deferred.
 
+The Telegram container reserves host loopback TCP port 8790 for its optional
+device-confirmation Mini App. Only an explicitly configured HTTPS gateway may
+expose that endpoint to selected WireGuard clients. This is frontend request
+authentication, not native command approval; Core's Unix API stays private.
+
 ## Native execution contract
 
 Text/images pass directly to Codex, with no extra LLM, rewriting, translation

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Publish the Telegram request-confirmation endpoint only on host loopback port 8790 for an explicitly configured private HTTPS gateway; Core's trusted Unix API remains unexposed.
+
 ## [0.1.10] - 2026-10-25
 
 - Preserve asynchronous agentMessage questions as durable waiting state, with native-item deduplication and verbatim session steering for answers instead of fabricated RPC responses.

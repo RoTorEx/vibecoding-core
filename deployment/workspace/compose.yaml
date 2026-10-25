@@ -53,6 +53,9 @@ services:
     depends_on:
       core:
         condition: service_healthy
+    ports:
+      # Host TLS gateway only. This does not expose the confirmation app publicly.
+      - "127.0.0.1:8790:8790"
     volumes:
       - type: bind
         source: ${APP_STATE_DIR:?}
