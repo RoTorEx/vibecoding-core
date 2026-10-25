@@ -89,3 +89,13 @@ user_event_id after their original request expires. The Core runs this check
 every 15 minutes; the frontend owns cleanup of bot.db and non-attachment uploads.
 Lifetime is measured from saved timestamps, never last access. Native Codex
 history and Telegram's server-side messages are outside this contract.
+
+
+Asynchronous agentMessage.questions are exposed through the existing questions
+endpoint with method item/agentMessage/asyncUserInput. Payload questions use
+string IDs, question text and label options; original_text retains native text.
+POST /questions/{id} accepts the same answers map as requestUserInput, but
+queues an idempotent native user message and returns its request_id/state.
+No server-request response is fabricated. Regular POST /messages also resolves
+pending async questions. Question events, pending_questions and Waiting status
+follow the existing API contract; protocol v1 remains compatible.

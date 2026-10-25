@@ -129,8 +129,8 @@ class Engine:
         for row in self.store.rows("SELECT * FROM requests WHERE state='queued' ORDER BY created"):
             self.spawn(self.dispatch(row["id"]))
 
-    def submit(self, payload: dict) -> dict:
-        if not self.accepting:
+    def submit(self, payload: dict, *, question_answer: bool = False) -> dict:
+        if not self.accepting and not question_answer:
             raise ValueError("Engine is preparing a snapshot/update; try again shortly")
         rid = payload.get("request_id")
         sid = payload.get("session_id")
@@ -164,6 +164,12 @@ class Engine:
                 raise ValueError("request_id already belongs to a different message")
             return {"request_id": rid, "state": old["state"]}
         self.store.accept(rid, sid, payload)
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE questions SET status='resolved' WHERE session_id=? AND method='item/agentMessage/asyncUserInput' AND status='pending'",
+                (sid,),
+            )
+        self.refresh_question_status(sid)
         self.store.event(sid, "user", {"text": text, "images": images, "audio": audio, "request_id": rid})
         if session["name"] == "New session" and text.strip():
             self.store.update_session(sid, name=" ".join(text.split())[:70])
@@ -349,6 +355,7 @@ class Engine:
         sid = s["id"]
         if method == "turn/started":
             self.store.update_session(sid, status="working", turn_id=params["turn"]["id"])
+            self.refresh_question_status(sid)
             started = self.live.get(sid, {}).get("started", time.time())
             self.live[sid] = {
                 "text": "",
@@ -383,6 +390,8 @@ class Engine:
             item = params.get("item", {})
             if item.get("type") == "reasoning":
                 self.finish_summary(sid, item["id"], item.get("summary"))
+            elif item.get("type") == "agentMessage" and item.get("questions"):
+                self.async_question(sid, item)
             elif item.get("type") in {"agentMessage", "plan"}:
                 self.store.event(
                     sid,
@@ -413,6 +422,36 @@ class Engine:
         elif method == "error":
             error = params.get("error") or {}
             self.store.event(sid, "error", {"text": error.get("message", "Codex reported an error")})
+
+    def async_question(self, sid: str, item: dict) -> None:
+        method = "item/agentMessage/asyncUserInput"
+        if self.store.one(
+            "SELECT id FROM questions WHERE session_id=? AND method=? AND json_extract(payload,'$.itemId')=?",
+            (sid, method, item["id"]),
+        ):
+            return
+        questions = [
+            {
+                "id": str(i),
+                "question": q["title"],
+                "options": [{"label": label} for label in q.get("options") or []],
+            }
+            for i, q in enumerate(item["questions"])
+        ]
+        payload = {
+            "threadId": self.store.session(sid)["thread_id"],
+            "itemId": item["id"],
+            "questions": questions,
+            "original_text": item.get("text", ""),
+        }
+        qid = identifier()
+        with self.store.db:
+            self.store.db.execute(
+                "INSERT INTO questions(id,session_id,rpc_id,method,payload) VALUES(?,?,?,?,?)",
+                (qid, sid, json.dumps("async:" + item["id"]), method, json.dumps(payload)),
+            )
+        self.refresh_question_status(sid)
+        self.store.event(sid, "question", {"question_id": qid, "method": method, **payload})
 
     def refresh_question_status(self, sid: str) -> None:
         session = self.store.session(sid)
@@ -482,11 +521,21 @@ class Engine:
         q = self.store.one("SELECT * FROM questions WHERE id=? AND status='pending'", (qid,))
         if not q:
             raise ValueError("This question is no longer pending")
-        if q["method"] == "item/tool/requestUserInput":
+        if q["method"] in {"item/tool/requestUserInput", "item/agentMessage/asyncUserInput"}:
             questions = json.loads(q["payload"]).get("questions", [])
             expected = {x["id"] for x in questions}
             if set(answers) != expected:
                 raise ValueError("Answer every question in this request")
+            if q["method"] == "item/agentMessage/asyncUserInput":
+                return self.submit(
+                    {
+                        "request_id": "async-answer:" + qid,
+                        "session_id": q["session_id"],
+                        "text": "\n\n".join(str(answers[x["id"]]) for x in questions),
+                        "images": [],
+                    },
+                    question_answer=True,
+                )
             result: dict = {"answers": {k: {"answers": [v]} for k, v in answers.items()}}
         else:
             result = {"action": answers.get("action", "decline"), "content": answers.get("content")}

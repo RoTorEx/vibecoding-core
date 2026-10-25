@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve asynchronous agentMessage questions as durable waiting state, with native-item deduplication and verbatim session steering for answers instead of fabricated RPC responses.
+
 ## [0.1.9] - 2026-10-24
 
 - Expire local interface history and image originals seven days after saving, while preserving active work, native identities and replay protection. Add an immediate maintenance cleanup API and periodic in-process cleanup.

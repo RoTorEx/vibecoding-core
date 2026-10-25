@@ -551,3 +551,52 @@ async def test_attachment_registration_copies_image_and_preserves_request_histor
     other = await new(host, "Other")
     with pytest.raises(ValueError, match="anchor"):
         await client.call(f"/sessions/{other['id']}/attachments", {"path": record["path"], "anchor": anchor})
+
+
+@pytest.mark.parametrize("button", [False, True])
+async def test_async_agent_question_is_waiting_and_answer_steers_without_rpc_response(host, button):
+    settings, engine, native, client = host
+    s = await new(host)
+    sid = s["id"]
+    await client.call("/messages", {"request_id": "initial", "session_id": sid, "text": "Task"})
+    await settle(engine)
+    thread = engine.store.session(sid)["thread_id"]
+    item = {
+        "id": "async-item",
+        "type": "agentMessage",
+        "text": "Where?\nHere\nElsewhere",
+        "phase": "commentary",
+        "questions": [{"title": "Where?", "options": ["Here", "Elsewhere"]}],
+    }
+    for _ in range(2):
+        engine.on_event("item/completed", {"threadId": thread, "item": item})
+    listed = next(s for s in await client.call("/sessions") if s["id"] == sid)
+    assert listed["status"] == "waiting" and listed["pending_questions"] == 1
+    questions = await client.call(f"/sessions/{sid}/questions")
+    assert len(questions) == 1 and questions[0]["payload"]["questions"][0]["options"] == [
+        {"label": "Here"},
+        {"label": "Elsewhere"},
+    ]
+    assert len([e for e in engine.store.history(sid) if e["kind"] == "question"]) == 1
+    assert not [e for e in engine.store.history(sid) if e["kind"] == "message"]
+    if button:
+        engine.accepting = False
+        with pytest.raises(ValueError, match="preparing"):
+            engine.submit({"request_id": "unrelated", "session_id": sid, "text": "New task"})
+        await client.call("/questions/" + questions[0]["id"], {"answers": {"0": "Here"}})
+        engine.accepting = True
+    else:
+        await client.call("/messages", {"request_id": "freeform", "session_id": sid, "text": "Here"})
+    await settle(engine)
+    assert not await client.call(f"/sessions/{sid}/questions")
+    assert engine.store.session(sid)["status"] == "working"
+    steers = [p for m, p in native.calls if m == "turn/steer"]
+    assert steers[-1]["input"] == [{"type": "text", "text": "Here"}]
+    assert not any(m == "response" for m, p in native.calls)
+    assert engine.store.session(sid)["thread_id"] == thread
+    assert [e["payload"]["text"] for e in engine.store.history(sid) if e["kind"] == "user"] == [
+        "Task",
+        "Here",
+    ]
+    engine.on_event("item/completed", {"threadId": thread, "item": item})
+    assert not await client.call(f"/sessions/{sid}/questions")

@@ -178,3 +178,25 @@ or symlink targets. Existing backup retention, project/source files, auth, model
 weights and native Codex context/history are outside this interface cleanup.
 Tests cover cutoff boundaries, native identity, deduplication, pending/active
 work, attachment FKs, newer images and interrupted file cleanup.
+
+
+## Asynchronous native questions
+
+Native agentMessage items may include a structured questions array from
+request_user_input_async, with title and optional string options. Preserve this
+contract as a durable question, not an ordinary message with discarded fields.
+Expose it as item/agentMessage/asyncUserInput, normalized to the existing
+question/id/label shape. Retain original native text in original_text. Deduplicate
+by session and native item ID, including resolved questions, so native replay
+never resurrects an answered prompt. Pending questions set Waiting even while
+the same native turn can continue independent work.
+
+These questions have no JSON-RPC request to answer. Submit selected/free-text
+answers verbatim as an ordinary idempotent user input to the same session,
+steering the active turn; never synthesize a client RPC response or inject model
+instructions. Regular accepted user messages, including media, resolve pending
+async questions. Do not let idempotent old-message retries clear newer questions.
+Answers to an existing question remain allowed during maintenance drain, as
+with synchronous RPC answers; unrelated new inputs stay queued. Turn completion
+expires unanswered questions. Synchronous requestUserInput and
+MCP elicitation keep their existing RPC response contracts.
