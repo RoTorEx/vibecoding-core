@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-25
+
 - Preserve asynchronous agentMessage questions as durable waiting state, with native-item deduplication and verbatim session steering for answers instead of fabricated RPC responses.
 
 ## [0.1.9] - 2026-10-24
