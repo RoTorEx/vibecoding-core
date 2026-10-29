@@ -20,7 +20,11 @@ native Codex with the owner's ChatGPT account before migration.
 
 scripts/provision_host.py prepares ~/.config/remote-vibecoding from the existing
 private deployment, preserving credentials. The bot token stays in a mode-0600
-file. Separate bot.toml/core.toml define component settings. compose.env holds
+file at ~/.config/remote-vibecoding/notifier-token. Verify its getMe identity
+before cutover and pin bot_username in bot.toml. The notifier owns
+~/.local/state/remote-vibecoding-notifier; runtime_dir still points to Core's run
+directory. Keep existing shared state and the old token for recovery, without
+running the old interactive bot. Separate bot.toml/core.toml define settings. compose.env holds
 host paths, UID/GID and selected image revisions; the workspace .env links to it.
 Credential values must not enter Git, images, logs or shell command arguments.
 
@@ -37,7 +41,13 @@ make status/logs/stop operate only this Compose project. Never use a global
 Docker prune or restart unrelated services.
 
 make deploy-bot checks/builds that repository and replaces only bot with
---no-deps. The operation verifies Core container identity. make rollback rebuilds the recorded previous bot revision from its Git archive
+--no-deps. The operation verifies Core container identity and requires the
+image to report notifications-only through --capabilities before activation.
+Rollback and automatic failure recovery also reject old interactive images;
+a first-cutover failure stops Telegram without restoring executable intake.
+Later notification-only revisions retain safe rollback. The bot mounts only its
+own state, the read-only Core socket directory, config and notifier token.
+No confirmation port is exposed. make rollback rebuilds the recorded previous bot revision from its Git archive
 and replaces the single installed image. make deploy-core schedules a durable host task after
 building; the task drains/waits for idle and activates Core. Scheduling success
 is not activation proof; inspect its unit journal and /health revision.

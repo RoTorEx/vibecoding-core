@@ -53,13 +53,16 @@ services:
     depends_on:
       core:
         condition: service_healthy
-    ports:
-      # Host TLS gateway only. This does not expose the confirmation app publicly.
-      - "127.0.0.1:8790:8790"
     volumes:
       - type: bind
-        source: ${APP_STATE_DIR:?}
-        target: ${APP_STATE_DIR}
+        source: ${APP_HOME}/.local/state/remote-vibecoding-notifier
+        target: ${APP_HOME}/.local/state/remote-vibecoding-notifier
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${APP_STATE_DIR:?}/run
+        target: ${APP_STATE_DIR}/run
+        read_only: true
         bind:
           create_host_path: false
       - type: bind
@@ -69,8 +72,8 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ${APP_HOME}/.config/remote-vibecoding/bot-token
-        target: ${APP_HOME}/.config/remote-vibecoding/bot-token
+        source: ${APP_HOME}/.config/remote-vibecoding/notifier-token
+        target: ${APP_HOME}/.config/remote-vibecoding/notifier-token
         read_only: true
         bind:
           create_host_path: false

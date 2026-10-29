@@ -12,10 +12,15 @@ daemon, as alex with the owner's existing sudo rights. The SSH executor is a
 short-lived entrypoint, not another permanent service. Each future execution
 host owns its state; live cross-host session migration is deferred.
 
-The Telegram container reserves host loopback TCP port 8790 for its optional
-device-confirmation Mini App. Only an explicitly configured HTTPS gateway may
-expose that endpoint to selected WireGuard clients. This is frontend request
-authentication, not native command approval; Core's Unix API stays private.
+Telegram is now a notification-only consumer. Its container has its own state
+directory, a read-only bind of the API socket directory and private notifier
+configuration/token; it does not mount engine.db, captured uploads, host home
+or a confirmation port. A read-only bind does not make a Unix socket protocol
+read-only: the notifier client separately rejects all mutation endpoints.
+Core's private API and native execution permissions remain unchanged.
+Bot activation and rollback accept only images reporting notifications-only
+capabilities; a failed first cutover stops Telegram rather than reactivating an
+interactive bot. Later notification-only revisions retain normal rollback.
 
 ## Native execution contract
 
@@ -35,7 +40,9 @@ namespace is needed for that access.
 
 ## State and recovery
 
-Core owns engine.db and native host threads. The frontend owns bot.db.
+Core owns engine.db and native host threads. The notifier owns bot.db in a
+separate local state directory. Existing legacy shared bot state remains
+preserved for recovery and is not replayed by the notifier.
 Stable request IDs deduplicate accepted input. Unknown RPC outcomes are never
 blindly replayed. Bot restart must preserve active native execution. Core restart
 can interrupt work and must preserve thread identity, history and source files.
@@ -171,7 +178,8 @@ Reads and retries never renew this lifetime. Check every 900 seconds (15
 minutes) within Core; POST /maintenance/retention supports an immediate operator
 check. The frontend independently expires its own transport copies and intake
 files through the API contract, without importing Core or writing engine.db.
-All interface state lives in configured data_dir: engine.db, bot.db and uploads.
+Core content lives in its configured data_dir: engine.db and uploads. The
+notification-only Telegram consumer owns a separate state directory.
 
 Protect sessions with active native turns, pending input/preprocessing or native
 questions until resolved. Preserve session/thread identity, settings and compact

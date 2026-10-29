@@ -163,7 +163,30 @@ class Operations:
             except subprocess.CalledProcessError:
                 print("Deployment is healthy but obsolete-image cleanup failed")
 
+    def notifier_image(self, revision):
+        result = subprocess.run(
+            [
+                "sudo",
+                "-n",
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--entrypoint",
+                "/app/.venv/bin/telegram-vibecoding",
+                "remote-vibecoding-bot:" + revision,
+                "--capabilities",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "notifications-only"
+
     def activate(self, component, revision):
+        if component == "bot" and not self.notifier_image(revision):
+            raise ValueError("Refusing a Telegram image without the notification-only contract")
         key = component.upper() + "_REVISION"
         old = self.image_revision(component)
         core_before = self.container_id("core") if component == "bot" else None
@@ -173,9 +196,12 @@ class Operations:
             if component == "bot" and core_before != self.container_id("core"):
                 raise RuntimeError("Bot update unexpectedly replaced Core")
         except BaseException:
-            if old:
+            if old and (component != "bot" or self.notifier_image(old)):
                 self.compose(["up", "--detach", "--no-deps", "--force-recreate", component], {key: old})
                 self.wait_ready(component, old)
+            elif component == "bot":
+                self.compose(["stop", "bot"])
+                print("Telegram stopped: the previous interactive image is not a safe fallback")
             raise
         values = read_env(self.env_file)
         values[key] = revision

@@ -17,6 +17,7 @@ def operations(tmp_path, monkeypatch):
     )
     operations = ops.Operations(tmp_path)
     monkeypatch.setattr(operations, "cleanup_images", lambda component: None)
+    monkeypatch.setattr(operations, "notifier_image", lambda revision: True)
     return operations
 
 
@@ -137,3 +138,25 @@ def test_rollback_rebuild_streams_only_the_requested_git_source(operations, monk
         assert archive.extractfile("source.txt").read() == b"recorded source"
         assert not any(name.startswith(".git/") for name in archive.getnames())
     assert "remote-vibecoding-bot:" + revision in builds[0][0]
+
+
+def test_failed_cutover_never_reactivates_interactive_bot(operations):
+    calls = []
+    operations.notifier_image = lambda revision: revision == "bot-new"
+    operations.compose = lambda args, revisions=None, **kwargs: calls.append((args, revisions))
+    operations.container_id = lambda component: "unchanged-core"
+    operations.wait_ready = lambda *args: (_ for _ in ()).throw(RuntimeError("not ready"))
+    with pytest.raises(RuntimeError, match="not ready"):
+        operations.activate("bot", "bot-new")
+    assert calls == [
+        (["up", "--detach", "--no-deps", "--force-recreate", "bot"], {"BOT_REVISION": "bot-new"}),
+        (["stop", "bot"], None),
+    ]
+    assert operations.image_revision("core") == "core-old"
+
+
+def test_interactive_bot_candidate_is_rejected_before_activation(operations):
+    operations.notifier_image = lambda revision: False
+    operations.compose = lambda *args, **kwargs: pytest.fail("must not activate")
+    with pytest.raises(ValueError, match="notification-only"):
+        operations.activate("bot", "interactive-old")

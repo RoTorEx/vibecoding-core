@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Isolate notification-only Telegram state from Core history/uploads and remove
+  the legacy confirmation port from the shared Compose deployment.
+- Require the notification-only capability for bot activation/rollback; a failed
+  cutover stops Telegram instead of restoring an interactive bot. Core execution
+  and container identity remain unchanged by bot updates.
+
 ## [0.1.11] - 2026-10-26
 
 - Publish the Telegram request-confirmation endpoint only on host loopback port 8790 for an explicitly configured private HTTPS gateway; Core's trusted Unix API remains unexposed.

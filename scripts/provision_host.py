@@ -44,7 +44,7 @@ def main():
     legacy_path = home / ".config/codex-relay/config.toml"
     legacy = tomllib.loads(legacy_path.read_text())
     data = str(Path(legacy.get("data_dir", str(home / ".local/state/codex-relay"))).expanduser())
-    token = private / "bot-token"
+    token = private / "notifier-token"
     if not token.exists():
         source = Path(legacy.get("token_file", str(home / ".config/codex-relay/bot-token"))).expanduser()
         shutil.copyfile(source, token)
@@ -77,15 +77,18 @@ def main():
         private / "bot.toml",
         toml_text(
             {
-                "data_dir": data,
+                "data_dir": str(home / ".local/state/remote-vibecoding-notifier"),
                 "runtime_dir": data + "/run",
                 "token_file": str(token),
+                "web_url": "https://vibecoding.com",
                 "allowed_user_id": legacy["allowed_user_id"],
-                "bot_username": legacy.get("bot_username", "GardenSandbox_bot"),
+                "bot_username": "",
                 "host_id": legacy.get("host_id", "vps"),
             }
         ),
     )
+    notifier_state = home / ".local/state/remote-vibecoding-notifier"
+    notifier_state.mkdir(parents=True, exist_ok=True, mode=0o700)
     revisions = {
         "CORE_REVISION": run(
             ["git", "rev-parse", "HEAD"], cwd=root / "vibecoding-core", capture_output=True
