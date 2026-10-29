@@ -4,7 +4,7 @@
 
 - Isolate notification-only Telegram state from Core history/uploads and remove
   the legacy confirmation port from the shared Compose deployment.
-- Require the notification-only capability for bot activation/rollback; a failed
+- Require the notification-only capability for startup and bot activation/rollback; a failed
   cutover stops Telegram instead of restoring an interactive bot. Core execution
   and container identity remain unchanged by bot updates.
 

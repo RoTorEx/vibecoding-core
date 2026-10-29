@@ -42,7 +42,8 @@ Docker prune or restart unrelated services.
 
 make deploy-bot checks/builds that repository and replaces only bot with
 --no-deps. The operation verifies Core container identity and requires the
-image to report notifications-only through --capabilities before activation.
+image to report notifications-only through --capabilities before activation
+or full workspace startup.
 Rollback and automatic failure recovery also reject old interactive images;
 a first-cutover failure stops Telegram without restoring executable intake.
 Later notification-only revisions retain safe rollback. The bot mounts only its

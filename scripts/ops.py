@@ -184,6 +184,13 @@ class Operations:
         )
         return result.returncode == 0 and result.stdout.strip() == "notifications-only"
 
+    def up(self):
+        if not self.notifier_image(self.image_revision("bot")):
+            raise ValueError("Refusing workspace startup with an interactive Telegram image")
+        self.compose(["up", "--detach"])
+        for component in ["core", "bot"]:
+            self.wait_ready(component, self.image_revision(component))
+
     def activate(self, component, revision):
         if component == "bot" and not self.notifier_image(revision):
             raise ValueError("Refusing a Telegram image without the notification-only contract")
@@ -341,9 +348,7 @@ def main():
                 for component in ["core", "bot"]:
                     operations.build(component)
             elif args.action == "up":
-                operations.compose(["up", "--detach"])
-                for component in ["core", "bot"]:
-                    operations.wait_ready(component, operations.image_revision(component))
+                operations.up()
             elif args.action == "deploy-bot":
                 operations.activate("bot", operations.build("bot"))
             elif args.action == "deploy-core":

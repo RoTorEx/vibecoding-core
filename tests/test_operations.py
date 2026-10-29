@@ -160,3 +160,10 @@ def test_interactive_bot_candidate_is_rejected_before_activation(operations):
     operations.compose = lambda *args, **kwargs: pytest.fail("must not activate")
     with pytest.raises(ValueError, match="notification-only"):
         operations.activate("bot", "interactive-old")
+
+
+def test_workspace_startup_cannot_restore_interactive_intake(operations):
+    operations.notifier_image = lambda revision: False
+    operations.compose = lambda *args, **kwargs: pytest.fail("must not start either container")
+    with pytest.raises(ValueError, match="interactive Telegram"):
+        operations.up()

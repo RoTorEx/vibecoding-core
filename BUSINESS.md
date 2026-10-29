@@ -18,7 +18,7 @@ configuration/token; it does not mount engine.db, captured uploads, host home
 or a confirmation port. A read-only bind does not make a Unix socket protocol
 read-only: the notifier client separately rejects all mutation endpoints.
 Core's private API and native execution permissions remain unchanged.
-Bot activation and rollback accept only images reporting notifications-only
+Bot activation, workspace startup and rollback accept only images reporting notifications-only
 capabilities; a failed first cutover stops Telegram rather than reactivating an
 interactive bot. Later notification-only revisions retain normal rollback.
 
