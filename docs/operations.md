@@ -2,7 +2,7 @@
 
 ## Workspace
 
-Use personal/apps/remote-vibecoding with sibling telegram-vibecoding and
+Use personal/projects/vibecoding/remote-vibecoding with sibling telegram-vibecoding and
 vibecoding-core Git checkouts. Run scripts/link_workspace.py from Core to create
 the common entrypoint links. Source changes/commits belong to their component.
 
