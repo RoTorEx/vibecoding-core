@@ -34,3 +34,11 @@ images continue to work while another session is recognizing speech.
 ## Continuous integration
 
 This repository stays public. GitHub-hosted Ubuntu runs `make check` and builds a wheel on pushes, pull requests and manual dispatch. Test fixtures use disposable local state and fake native agents; no production SSH keys, native account credentials, live sessions or speech model download are provided. CI does not deploy or start the production service.
+
+## Runtime image dependencies
+
+The container uses Python 3.13 on Debian Bookworm. Patched uv 0.13.4 is
+mounted only in the dependency build stage; the final image copies the locked
+virtual environment and runs its installed CLI directly. Global pip, uv and
+uvx are absent at runtime. Rebuild with a fresh base image for Debian security
+updates; preserve the existing user, home and deployment mounts.

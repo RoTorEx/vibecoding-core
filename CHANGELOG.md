@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Keep patched uv 0.13.4 in the dependency build stage only; remove unused
+  global pip and build tools from the runtime image.
+
 - Add GitHub-hosted checks and wheel builds using disposable state, preserving public access.
 
 - Isolate notification-only Telegram state from Core history/uploads and remove
