@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add GitHub-hosted checks and wheel builds using disposable state, preserving public access.
+
 - Isolate notification-only Telegram state from Core history/uploads and remove
   the legacy confirmation port from the shared Compose deployment.
 - Require the notification-only capability for startup and bot activation/rollback; a failed

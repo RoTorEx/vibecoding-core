@@ -30,3 +30,7 @@ voice input. The private default is `~/.cache/remote-vibecoding/whisper-base`;
 or third container is required. The runtime uses bundled PyAV decoding and never
 downloads models. Accept one voice recording up to five minutes / 20 MB. Text and
 images continue to work while another session is recognizing speech.
+
+## Continuous integration
+
+This repository stays public. GitHub-hosted Ubuntu runs `make check` and builds a wheel on pushes, pull requests and manual dispatch. Test fixtures use disposable local state and fake native agents; no production SSH keys, native account credentials, live sessions or speech model download are provided. CI does not deploy or start the production service.
