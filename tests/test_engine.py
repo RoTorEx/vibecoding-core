@@ -499,7 +499,8 @@ async def test_native_limits_cache_updates_and_unavailable_do_not_run_turns(host
     )
     updated = await client.call("/limits")
     assert updated["rateLimitsByLimitId"]["other"]["primary"]["usedPercent"] == 40
-    engine.limits_checked = 0
+    # Expire relative to the recorded clock; a fresh CI host may have uptime below 60 seconds.
+    engine.limits_checked -= 61
     native.fail_method = "account/rateLimits/read"
     native.failure = ConnectionError("offline")
     native.request = original
