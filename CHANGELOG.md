@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Allow the native Web activation probe to use its isolated host-reachable bridge URL without changing the Core application image.
+
 ## [0.1.13] - 2026-11-04
 
 - Activate the independently released Web container without restarting Core/notifier; preserve Web state on failure recovery.

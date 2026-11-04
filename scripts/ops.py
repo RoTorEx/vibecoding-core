@@ -283,7 +283,7 @@ class Operations:
                     "5",
                     "--header",
                     "Host: vibecoding.com",
-                    "http://127.0.0.1:8791/api/health",
+                    values.get("WEB_VIBECODING_HEALTH_URL", "http://127.0.0.1:8791/api/health"),
                 ],
                 capture_output=True,
             )

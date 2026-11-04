@@ -167,3 +167,8 @@ Capture their prior Docker json-file records before recreating these containers
 with the new driver. Retain the original native upload path as one compatibility
 alias to the moved physical directory while historical inputs still refer to it.
 Slot Sync remains independent and unchanged.
+
+For the internal-only Web bridge, set WEB_VIBECODING_HEALTH_URL to
+http://10.89.71.2:8791/api/health in config/core/compose.env. The native operator
+uses this host-reachable private address; no public or loopback port is required.
+The host control update is independent of the Core application image version.
