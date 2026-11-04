@@ -736,6 +736,7 @@ def application(engine: Engine) -> web.Application:
                 {
                     "ok": True,
                     "protocol_version": 1,
+                    "media_read": True,
                     "version": __version__,
                     "revision": os.environ.get("VIBECODING_CORE_REVISION", "development"),
                     "host_id": engine.settings.host_id,
@@ -814,6 +815,35 @@ def application(engine: Engine) -> web.Application:
                     disk_free=info["disk_free"],
                     disk_total=info["disk_total"],
                 )
+            elif parts[2] == "media-file" and request.method == "GET":
+                engine.store.session(sid)
+                host_path = Path(request.query.get("path", ""))
+                if not host_path.is_absolute():
+                    raise web.HTTPNotFound()
+                source = engine.settings.host_path(host_path)
+                if source.is_symlink() or not source.is_file() or source.stat().st_size > 20_000_000:
+                    raise web.HTTPNotFound()
+                with source.open("rb") as stream:
+                    prefix = stream.read(32)
+                if prefix.startswith(b"\x89PNG\r\n\x1a\n"):
+                    mime = "image/png"
+                elif prefix.startswith(b"\xff\xd8\xff"):
+                    mime = "image/jpeg"
+                elif prefix.startswith(b"RIFF") and prefix[8:12] == b"WEBP":
+                    mime = "image/webp"
+                elif prefix.startswith(b"OggS"):
+                    mime = "audio/ogg"
+                elif len(prefix) > 12 and prefix[4:8] == b"ftyp":
+                    mime = "audio/mp4"
+                elif prefix.startswith(b"\x1aE\xdf\xa3"):
+                    mime = "audio/webm"
+                elif prefix.startswith(b"RIFF") and prefix[8:12] == b"WAVE":
+                    mime = "audio/wav"
+                elif prefix.startswith(b"ID3") or prefix[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+                    mime = "audio/mpeg"
+                else:
+                    raise web.HTTPNotFound()
+                return web.FileResponse(source, headers={"Content-Type": mime, "Cache-Control": "no-store"})
             elif parts[2] == "attachments":
                 anchor = request.query.get("anchor")
                 data = (

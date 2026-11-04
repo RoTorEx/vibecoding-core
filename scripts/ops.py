@@ -61,7 +61,7 @@ class Operations:
         argv = [
             "sudo",
             "-n",
-            "--preserve-env=CORE_REVISION,BOT_REVISION,REMOTE_VIBECODING_ROOT,APP_HOME,APP_UID,APP_GID,APP_STATE_DIR",
+            "--preserve-env=WEB_VIBECODING_IMAGE,CORE_REVISION,BOT_REVISION,REMOTE_VIBECODING_ROOT,APP_HOME,APP_UID,APP_GID,APP_STATE_DIR",
             "docker",
             "compose",
             "--project-directory",
@@ -74,6 +74,10 @@ class Operations:
             "remote-vibecoding",
             *args,
         ]
+        web_manifest = self.root / "runtime/web/compose.yaml"
+        if self.installed and web_manifest.is_file():
+            position = argv.index("--project-name")
+            argv[position:position] = ["--file", str(web_manifest)]
         return run(argv, env=environment, **kwargs)
 
     def api(self, path, body=None):
@@ -227,6 +231,84 @@ class Operations:
         atomic_text(record, json.dumps(history, indent=2) + "\n")
         self.cleanup_images(component)
 
+    def deploy_web(self, image):
+        if not re.fullmatch(
+            r"ghcr\.io/strelkov-inc/web-vibecoding(?::v\d+\.\d+\.\d+|@sha256:[a-f0-9]{64})", image or ""
+        ):
+            raise ValueError("Select an exact published Web image")
+        native = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "web-vibecoding.service"], capture_output=True
+        )
+        if native.returncode == 0:
+            raise RuntimeError("Stop the native Web writer under the migration procedure first")
+        core = self.container_id("core")
+        if not core:
+            raise RuntimeError("Core must already be running")
+        if not self.api("/health").get("media_read"):
+            raise RuntimeError("Deploy Core with media streaming before activating containerized Web")
+        values = read_env(self.env_file)
+        previous = values.get("WEB_VIBECODING_IMAGE")
+        candidate = {"WEB_VIBECODING_IMAGE": image}
+        record = self.private / "deployment.json"
+        previous_env = self.env_file.read_text()
+        previous_record = record.read_text() if record.exists() else None
+        history = json.loads(previous_record) if previous_record is not None else {}
+        self.compose(["pull", "web"], candidate)
+        labels = json.loads(
+            run(
+                ["sudo", "-n", "docker", "image", "inspect", "--format", "{{json .Config.Labels}}", image],
+                capture_output=True,
+            ).stdout
+        )
+        version = labels.get("org.opencontainers.image.version", "")
+        if (
+            labels.get("org.opencontainers.image.title") != "web-vibecoding"
+            or not re.fullmatch(r"[0-9a-f]{40}", labels.get("org.opencontainers.image.revision", ""))
+            or not re.fullmatch(r"\d+\.\d+\.\d+", version)
+            or (":v" in image and image.rsplit(":v", 1)[1] != version)
+        ):
+            raise RuntimeError("Web image identity does not match its release")
+        try:
+            self.compose(["up", "--detach", "--no-deps", "--force-recreate", "web"], candidate)
+            self.wait_ready("web", version)
+            run(
+                [
+                    "curl",
+                    "--noproxy",
+                    "*",
+                    "--fail",
+                    "--silent",
+                    "--show-error",
+                    "--max-time",
+                    "5",
+                    "--header",
+                    "Host: vibecoding.com",
+                    "http://127.0.0.1:8791/api/health",
+                ],
+                capture_output=True,
+            )
+            if self.container_id("core") != core:
+                raise RuntimeError("Independent Web activation changed Core identity")
+            values["WEB_VIBECODING_IMAGE"] = image
+            atomic_text(self.env_file, "".join(f"{key}={value}\n" for key, value in values.items()))
+            history["web"] = {"current": image, "previous": previous}
+            atomic_text(record, json.dumps(history, indent=2) + "\n")
+        except BaseException:
+            atomic_text(self.env_file, previous_env)
+            if previous_record is None:
+                record.unlink(missing_ok=True)
+            else:
+                atomic_text(record, previous_record)
+            self.compose(["stop", "web"])
+            if previous:
+                self.compose(
+                    ["up", "--detach", "--no-deps", "--force-recreate", "web"],
+                    {"WEB_VIBECODING_IMAGE": previous},
+                )
+                self.wait_ready("web", previous)
+            raise
+        print("Web activated independently: " + image)
+
     def schedule_core(self, revision):
         worker = Path(__file__).resolve()
         unit = "remote-vibecoding-update-" + str(time.time_ns())
@@ -326,6 +408,7 @@ def main():
             "logs",
             "stop",
             "deploy-bot",
+            "deploy-web",
             "deploy-core",
             "apply-core",
             "rollback-bot",
@@ -334,6 +417,7 @@ def main():
         ],
     )
     parser.add_argument("--revision")
+    parser.add_argument("--image")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     operations = Operations(args.root)
@@ -356,6 +440,8 @@ def main():
                     operations.build(component)
             elif args.action == "up":
                 operations.up()
+            elif args.action == "deploy-web":
+                operations.deploy_web(args.image)
             elif args.action == "deploy-bot":
                 operations.activate("bot", operations.build("bot"))
             elif args.action == "deploy-core":

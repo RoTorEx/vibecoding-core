@@ -34,9 +34,20 @@ def main():
     for source, name in [
         (source_worker, "ops.py"),
         (repo / "scripts/host_executor.py", "host_executor.py"),
-        (repo / "deployment/workspace/compose.yaml", "compose.yaml"),
     ]:
         subprocess.run(["sudo", "-n", "install", "-m", "644", str(source), str(runtime / name)], check=True)
+    subprocess.run(
+        [
+            "sudo",
+            "-n",
+            "install",
+            "-m",
+            "644",
+            str(repo / "deployment/workspace/compose.yaml"),
+            str(runtime / "compose.yaml"),
+        ],
+        check=True,
+    )
     subprocess.run(
         ["sudo", "-n", "tee", str(runtime / "REVISION")],
         input=revision + "\n",

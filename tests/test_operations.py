@@ -169,3 +169,65 @@ def test_workspace_startup_cannot_restore_interactive_intake(operations):
     operations.compose = lambda *args, **kwargs: pytest.fail("must not start either container")
     with pytest.raises(ValueError, match="interactive Telegram"):
         operations.up()
+
+
+@pytest.mark.parametrize("fail_candidate", [False, True, "metadata"])
+def test_web_activation_and_failure_recovery_leave_core_and_bot_unchanged(
+    operations, monkeypatch, fail_candidate
+):
+    import json
+    from types import SimpleNamespace
+
+    old = "ghcr.io/strelkov-inc/web-vibecoding:v0.1.16"
+    candidate = "ghcr.io/strelkov-inc/web-vibecoding:v0.1.17"
+    values = ops.read_env(operations.env_file)
+    values["WEB_VIBECODING_IMAGE"] = old
+    operations.env_file.write_text("".join(f"{k}={v}\n" for k, v in values.items()))
+    calls = []
+    operations.compose = lambda args, revisions=None, **kwargs: calls.append((args, revisions))
+    operations.container_id = lambda component: "stable-core-instance"
+    operations.api = lambda path: {"media_read": True}
+    monkeypatch.setattr(ops.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=3))
+
+    def command(argv, **kwargs):
+        labels = {
+            "org.opencontainers.image.title": "web-vibecoding",
+            "org.opencontainers.image.version": "0.1.17",
+            "org.opencontainers.image.revision": "a" * 40,
+        }
+        return SimpleNamespace(stdout=json.dumps(labels))
+
+    monkeypatch.setattr(ops, "run", command)
+
+    def ready(component, revision):
+        if fail_candidate is True and revision == "0.1.17":
+            raise RuntimeError("candidate listener unavailable")
+
+    operations.wait_ready = ready
+    if fail_candidate == "metadata":
+        original = ops.atomic_text
+        failed = False
+
+        def write(path, content, mode=0o600):
+            nonlocal failed
+            if path.name == "deployment.json" and not failed:
+                failed = True
+                raise RuntimeError("candidate metadata unavailable")
+            original(path, content, mode)
+
+        monkeypatch.setattr(ops, "atomic_text", write)
+    if fail_candidate:
+        with pytest.raises(RuntimeError, match="unavailable"):
+            operations.deploy_web(candidate)
+        assert calls[-1] == (
+            ["up", "--detach", "--no-deps", "--force-recreate", "web"],
+            {"WEB_VIBECODING_IMAGE": old},
+        )
+        assert ops.read_env(operations.env_file)["WEB_VIBECODING_IMAGE"] == old
+    else:
+        operations.deploy_web(candidate)
+        assert ops.read_env(operations.env_file)["WEB_VIBECODING_IMAGE"] == candidate
+    assert all(args[-1] == "web" for args, _ in calls)
+    assert all("--no-deps" in args for args, _ in calls if args[0] == "up")
+    assert operations.image_revision("core") == "core-old"
+    assert operations.image_revision("bot") == "bot-old"

@@ -45,6 +45,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    logging:
+      driver: journald
+      options: {tag: remote-vibecoding-core}
     stop_grace_period: 45s
   bot:
     image: remote-vibecoding-bot:${BOT_REVISION:-local}
@@ -94,4 +97,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 25s
+    logging:
+      driver: journald
+      options: {tag: telegram-vibecoding}
     stop_grace_period: 45s

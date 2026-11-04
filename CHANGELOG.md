@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Activate the independently released Web container without restarting Core/notifier; preserve Web state on failure recovery.
+- Stream selected image/audio files through the trusted Unix API for Web, with Range support and no session-history mutation or additional Web host mount.
+- Export Core/notifier journal records into bounded project logs for existing backups.
+
 - Install the host operator/executor and Compose payload in the service room; keep explicit source builds independent of lifecycle and snapshots.
 
 ## [0.1.12] - 2026-10-31

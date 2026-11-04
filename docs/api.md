@@ -1,6 +1,7 @@
 # Core API contract v1
 
-Transport: private HTTP/JSON over the configured Unix socket. The frontend and
+Transport: private HTTP/JSON over the configured Unix socket, with the explicit
+binary media response described below. The frontend and
 Core share this contract, not implementation imports or a third package.
 
 - GET /health: readiness, revision, host_id, accepting, busy, pending_requests.
@@ -99,3 +100,18 @@ queues an idempotent native user message and returns its request_id/state.
 No server-request response is fabricated. Regular POST /messages also resolves
 pending async questions. Question events, pending_questions and Waiting status
 follow the existing API contract; protocol v1 remains compatible.
+
+## Selected media read
+
+GET /sessions/{id}/media-file?path=ABSOLUTE_HOST_PATH returns an existing session's
+image/audio bytes (up to 20 MB) through Core's established host view. Health adds
+media_read=true when this capability exists. It rejects missing sessions, relative
+paths, final symlinks, unsupported content and oversized files. Accepted image
+signatures are PNG/JPEG/WebP; audio is MP4/Ogg/WebM/WAV/MP3. Responses support Range
+and send no-store. Reading does not register an attachment or mutate history.
+
+This is a trusted Unix client capability within Core's existing host authority.
+Web must independently select the exact path from that session's visible
+conversation/attachment references, and must not expose this raw route through
+its generic public proxy. No API caller supplies a container mount or a new host
+permission. Original host paths and historical media keys remain stable.

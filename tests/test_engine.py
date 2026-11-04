@@ -601,3 +601,36 @@ async def test_async_agent_question_is_waiting_and_answer_steers_without_rpc_res
     ]
     engine.on_event("item/completed", {"threadId": thread, "item": item})
     assert not await client.call(f"/sessions/{sid}/questions")
+
+
+async def test_unix_media_read_streams_ranges_without_mutating_session_history(host):
+    settings, engine, native, client = host
+    session = await new(host)
+    image = settings.development_root.parent / "generated.png"
+    content = b"\x89PNG\r\n\x1a\n" + b"fixture-image"
+    image.write_bytes(content)
+    text = settings.development_root.parent / "private.txt"
+    text.write_text("non-media fixture")
+    link = image.with_name("linked.png")
+    link.symlink_to(image)
+    oversized = image.with_name("oversized.png")
+    with oversized.open("wb") as stream:
+        stream.truncate(20_000_001)
+    before = engine.store.history(session["id"])
+    attachments = engine.attachments(session["id"])
+    endpoint = f"http://engine/sessions/{session['id']}/media-file"
+    async with client.http.get(endpoint, params={"path": str(image)}) as response:
+        assert response.status == 200
+        assert await response.read() == content
+        assert response.headers["Cache-Control"] == "no-store"
+    async with client.http.get(
+        endpoint, params={"path": str(image)}, headers={"Range": "bytes=0-7"}
+    ) as response:
+        assert response.status == 206
+        assert await response.read() == content[:8]
+    for path in (text, link, oversized):
+        async with client.http.get(endpoint, params={"path": str(path)}) as response:
+            assert response.status == 404
+    assert engine.store.history(session["id"]) == before
+    assert engine.attachments(session["id"]) == attachments
+    assert not native.calls

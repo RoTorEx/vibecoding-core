@@ -144,3 +144,26 @@ New-host recovery requires deliberate GitHub device authorization and registrati
 of that host's own public key. Never copy a Mac private SSH key or write tokens
 into commands, logs, Git remotes or project files. This setup does not register
 GitHub credentials for offsite backup or modify the backup producer's credentials.
+
+## Containerized Web and media
+
+Install Web's separately reviewed Compose manifest at runtime/web/compose.yaml.
+The stable operator merges it only when installed. With Core media streaming
+capability present, `remote-vibecoding --image ghcr.io/strelkov-inc/web-vibecoding:vVERSION deploy-web`
+activates only Web, validates release labels and Web's actual Core-backed health,
+and checks that Core identity is unchanged. Failure restores the prior Web image
+without restoring a database or restarting Core/notifier.
+
+The trusted Unix API exposes GET /sessions/{sid}/media-file?path=ABSOLUTE_PATH for
+existing sessions and recognized image/audio files within the current Core host
+view, limited to 20 MB. It supports Range requests and does not attach media, add
+turns or mutate history. Web validates a requested media key against that session's
+conversation/registered attachments before calling this route; its generic public
+proxy does not expose the raw file route. Web mounts only its own state/config,
+Core's socket directory and upload directory; it receives no host root mount.
+
+Core/notifier stdout/stderr use journald and bounded host exports in logs/runtime.
+Capture their prior Docker json-file records before recreating these containers
+with the new driver. Retain the original native upload path as one compatibility
+alias to the moved physical directory while historical inputs still refer to it.
+Slot Sync remains independent and unchanged.
