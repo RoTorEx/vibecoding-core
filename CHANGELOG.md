@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-11-04
+
 - Activate the independently released Web container without restarting Core/notifier; preserve Web state on failure recovery.
 - Stream selected image/audio files through the trusted Unix API for Web, with Range support and no session-history mutation or additional Web host mount.
 - Export Core/notifier journal records into bounded project logs for existing backups.
