@@ -41,11 +41,19 @@ def atomic_text(path: Path, text: str, mode=0o600):
 class Operations:
     def __init__(self, root: Path):
         self.root = root.resolve()
-        self.env_file = (self.root / ".env").resolve()
+        self.installed = self.root == Path("/srv/remote-vibecoding")
+        self.env_file = (
+            self.root / "config/core/compose.env" if self.installed else self.root / ".env"
+        ).resolve()
         if not self.env_file.exists():
             raise ValueError("Provision host configuration before running Compose operations")
         self.values = read_env(self.env_file)
-        self.private = Path(self.values["APP_HOME"]) / ".config/remote-vibecoding"
+        self.private = (
+            self.env_file.parent
+            if self.installed
+            else Path(self.values["APP_HOME"]) / ".config/remote-vibecoding"
+        )
+        self.source = Path(self.values["REMOTE_VIBECODING_ROOT"])
         self.state = Path(self.values["APP_STATE_DIR"])
 
     def compose(self, args, revisions=None, **kwargs):
@@ -61,7 +69,7 @@ class Operations:
             "--env-file",
             str(self.env_file),
             "--file",
-            str(self.root / "compose.yaml"),
+            str(self.root / "runtime/core/compose.yaml" if self.installed else self.root / "compose.yaml"),
             "--project-name",
             "remote-vibecoding",
             *args,
@@ -120,7 +128,7 @@ class Operations:
         raise RuntimeError(f"{component} did not become ready at the requested revision")
 
     def build(self, component):
-        repo = self.root / ("vibecoding-core" if component == "core" else "telegram-vibecoding")
+        repo = self.source / ("vibecoding-core" if component == "core" else "telegram-vibecoding")
         if run(["git", "status", "--porcelain"], cwd=repo, capture_output=True).stdout.strip():
             raise ValueError(f"Commit {component} source before deployment; working changes are preserved")
         run(["make", "check"], cwd=repo)
@@ -132,7 +140,7 @@ class Operations:
         """Rebuild a recorded revision without another persistent source checkout."""
         if not re.fullmatch(r"[0-9a-f]{40}", revision):
             raise ValueError("Rollback requires a complete recorded Git revision")
-        repo = self.root / ("vibecoding-core" if component == "core" else "telegram-vibecoding")
+        repo = self.source / ("vibecoding-core" if component == "core" else "telegram-vibecoding")
         probe = subprocess.run(
             ["git", "cat-file", "-e", revision + "^{commit}"],
             cwd=repo,
@@ -220,8 +228,7 @@ class Operations:
         self.cleanup_images(component)
 
     def schedule_core(self, revision):
-        repo = self.root / "vibecoding-core"
-        worker = repo / "scripts/ops.py"
+        worker = Path(__file__).resolve()
         unit = "remote-vibecoding-update-" + str(time.time_ns())
         user = pwd.getpwuid(os.getuid()).pw_name
         run(
@@ -309,7 +316,7 @@ class Operations:
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--root", type=Path, default=Path("/srv/remote-vibecoding"))
     parser.add_argument(
         "action",
         choices=[

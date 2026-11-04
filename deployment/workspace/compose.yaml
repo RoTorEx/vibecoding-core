@@ -14,14 +14,25 @@ services:
     restart: unless-stopped
     environment:
       HOME: ${APP_HOME}
-      VIBECODING_CORE_CONFIG: ${APP_HOME}/.config/remote-vibecoding/core.toml
-      VIBECODING_EXECUTOR_SSH_CONFIG: ${APP_HOME}/.config/remote-vibecoding/executor-ssh.conf
+      VIBECODING_CORE_CONFIG: /srv/remote-vibecoding/config/core/core.toml
+      VIBECODING_EXECUTOR_SSH_CONFIG: /srv/remote-vibecoding/config/core/executor-ssh.conf
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - type: bind
         source: ${APP_HOME}
         target: ${APP_HOME}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/remote-vibecoding/config/core
+        target: /srv/remote-vibecoding/config/core
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/remote-vibecoding/data/core
+        target: /srv/remote-vibecoding/data/core
         bind:
           create_host_path: false
       - type: bind
@@ -49,14 +60,14 @@ services:
     restart: unless-stopped
     environment:
       HOME: ${APP_HOME}
-      TELEGRAM_VIBECODING_CONFIG: ${APP_HOME}/.config/remote-vibecoding/bot.toml
+      TELEGRAM_VIBECODING_CONFIG: /srv/remote-vibecoding/config/notifier/bot.toml
     depends_on:
       core:
         condition: service_healthy
     volumes:
       - type: bind
-        source: ${APP_HOME}/.local/state/remote-vibecoding-notifier
-        target: ${APP_HOME}/.local/state/remote-vibecoding-notifier
+        source: /srv/remote-vibecoding/data/notifier
+        target: /srv/remote-vibecoding/data/notifier
         bind:
           create_host_path: false
       - type: bind
@@ -66,14 +77,14 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ${APP_HOME}/.config/remote-vibecoding/bot.toml
-        target: ${APP_HOME}/.config/remote-vibecoding/bot.toml
+        source: /srv/remote-vibecoding/config/notifier/bot.toml
+        target: /srv/remote-vibecoding/config/notifier/bot.toml
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${APP_HOME}/.config/remote-vibecoding/notifier-token
-        target: ${APP_HOME}/.config/remote-vibecoding/notifier-token
+        source: /srv/remote-vibecoding/config/notifier/notifier-token
+        target: /srv/remote-vibecoding/config/notifier/notifier-token
         read_only: true
         bind:
           create_host_path: false

@@ -18,14 +18,16 @@ SSH daemon, git, Python and passwordless sudo. Install official Codex 0.163.0 pl
 its matching code-mode host with scripts/install_codex.py if absent. Authenticate
 native Codex with the owner's ChatGPT account before migration.
 
-scripts/provision_host.py prepares ~/.config/remote-vibecoding from the existing
-private deployment, preserving credentials. The bot token stays in a mode-0600
-file at ~/.config/remote-vibecoding/notifier-token. Verify its getMe identity
-before cutover and pin bot_username in bot.toml. The notifier owns
-~/.local/state/remote-vibecoding-notifier; runtime_dir still points to Core's run
-directory. Keep existing shared state and the old token for recovery, without
+scripts/provision_host.py prepares /srv/remote-vibecoding/config/core and
+config/notifier from the private deployment. Existing installations must first
+migrate their stopped state; provisioning refuses an empty replacement Core.
+The bot token stays in mode-0600 config/notifier/notifier-token. Verify its getMe
+identity before cutover and pin bot_username in bot.toml. The notifier owns
+data/notifier; runtime_dir points to Core's data/core/run directory. Keep existing shared state and the old token for recovery, without
 running the old interactive bot. Separate bot.toml/core.toml define settings. compose.env holds
 host paths, UID/GID and selected image revisions; the workspace .env links to it.
+Installed operations read config/core/compose.env directly. Only explicit source
+builds consult REMOTE_VIBECODING_ROOT; lifecycle/status/snapshots use installed files.
 Credential values must not enter Git, images, logs or shell command arguments.
 
 The dedicated executor SSH key is scoped by forced command and the actual
@@ -75,10 +77,11 @@ and build caches, logs and runtime helper links are excluded.
 After migration, run scripts/install_operations.py --root <workspace> as alex
 to install the remote-vibecoding CLI and snapshot timer. Disable the legacy
 snapshot timer only after its replacement is ready. The CLI, snapshot timer and
-scheduled updates use the single reviewed scripts/ops.py in this checkout,
+scheduled updates use /srv/remote-vibecoding/runtime/core/ops.py,
 without per-revision worker directories. Installation removes known legacy worker
 copies once no in-flight update needs them. The old snapshot selection
-path is intentionally retained for the existing offsite backup service.
+archive identity remains codex-relay; update the offsite registry to the new
+data/core/snapshots path during the room migration.
 
 Successful activation prunes obsolete component images through the existing
 host-maintenance helper. These repositories are excluded from its automatic

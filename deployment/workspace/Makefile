@@ -1,5 +1,5 @@
 .PHONY: install check build up stop status logs deploy-bot deploy-core rollback snapshot
-OPS = python3 "$(CURDIR)/vibecoding-core/scripts/ops.py" --root "$(CURDIR)"
+OPS = remote-vibecoding
 install:
 	$(MAKE) -C vibecoding-core install
 	$(MAKE) -C telegram-vibecoding install

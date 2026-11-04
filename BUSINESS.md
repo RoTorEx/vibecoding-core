@@ -213,3 +213,14 @@ Answers to an existing question remain allowed during maintenance drain, as
 with synchronous RPC answers; unrelated new inputs stay queued. Turn completion
 expires unanswered questions. Synchronous requestUserInput and
 MCP elicitation keep their existing RPC response contracts.
+
+## Installed service room
+
+The host operator, executor and Compose payload live in `/srv/remote-vibecoding/runtime/core`.
+Private Core configuration and deployment metadata live in `config/core`; the notifier
+owns `config/notifier` and `data/notifier`. Core owns `data/core`, including snapshots
+and uploads. Paths are relative to `/srv/remote-vibecoding`. Native `.codex` identities,
+credentials and developer source cwd paths remain under the existing alex home.
+The installed operator uses `REMOTE_VIBECODING_ROOT` only for explicit source builds;
+status, lifecycle, scheduled updates and snapshots execute installed runtime payload.
+Existing state requires a stopped-producer migration, never empty replacement state.

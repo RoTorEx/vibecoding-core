@@ -23,9 +23,28 @@ def main():
         raise ValueError("Run as the developer account")
     repo = root / "vibecoding-core"
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-    worker = repo / "scripts/ops.py"
-    if not worker.is_file():
+    if subprocess.check_output(["git", "status", "--porcelain"], cwd=repo, text=True).strip():
+        raise ValueError("Commit the reviewed host controls before installation")
+    source_worker = repo / "scripts/ops.py"
+    if not source_worker.is_file():
         raise ValueError("The reviewed operations script is missing")
+    room = Path("/srv/remote-vibecoding")
+    runtime = room / "runtime/core"
+    subprocess.run(["sudo", "-n", "install", "-d", "-m", "755", str(runtime)], check=True)
+    for source, name in [
+        (source_worker, "ops.py"),
+        (repo / "scripts/host_executor.py", "host_executor.py"),
+        (repo / "deployment/workspace/compose.yaml", "compose.yaml"),
+    ]:
+        subprocess.run(["sudo", "-n", "install", "-m", "644", str(source), str(runtime / name)], check=True)
+    subprocess.run(
+        ["sudo", "-n", "tee", str(runtime / "REVISION")],
+        input=revision + "\n",
+        text=True,
+        stdout=subprocess.DEVNULL,
+        check=True,
+    )
+    worker = runtime / "ops.py"
     units = {
         "remote-vibecoding-snapshot.service": f"""[Unit]
 Description=Remote Vibecoding private consistent snapshot
@@ -36,7 +55,7 @@ Type=oneshot
 User={user}
 Environment=HOME={Path.home()}
 UMask=0077
-ExecStart=/usr/bin/python3 {worker} --root {root} snapshot
+ExecStart=/usr/bin/python3 {worker} --root {room} snapshot
 TimeoutStartSec=900
 """,
         "remote-vibecoding-snapshot.timer": """[Unit]
@@ -63,9 +82,9 @@ WantedBy=timers.target
     wrapper.parent.mkdir(parents=True, exist_ok=True)
     wrapper.write_text(
         "#!/bin/sh\nexec /usr/bin/python3 "
-        + shlex.quote(str(repo / "scripts/ops.py"))
+        + shlex.quote(str(worker))
         + " --root "
-        + shlex.quote(str(root))
+        + shlex.quote(str(room))
         + ' "$@"\n'
     )
     wrapper.chmod(0o700)

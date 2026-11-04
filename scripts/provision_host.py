@@ -39,12 +39,42 @@ def main():
     os.umask(0o077)
     root = args.root.resolve(strict=True)
     home = Path.home()
-    private = home / ".config/remote-vibecoding"
+    room = Path("/srv/remote-vibecoding")
+    private = room / "config/core"
+    notifier_config = room / "config/notifier"
+    notifier_state = room / "data/notifier"
+    data_path = room / "data/core"
+    if (home / ".local/state/codex-relay/engine.db").exists() and not (data_path / "engine.db").exists():
+        raise ValueError("Migrate existing Core state under the administrator migration procedure first")
+    if (home / ".local/state/remote-vibecoding-notifier/bot.db").exists() and not (
+        notifier_state / "bot.db"
+    ).exists():
+        raise ValueError("Migrate existing notifier state before provisioning its room")
+    for directory in (private, notifier_config, notifier_state, data_path):
+        run(
+            [
+                "sudo",
+                "-n",
+                "install",
+                "-d",
+                "-o",
+                str(os.getuid()),
+                "-g",
+                str(os.getgid()),
+                "-m",
+                "700",
+                str(directory),
+            ]
+        )
     private.mkdir(parents=True, exist_ok=True, mode=0o700)
     legacy_path = home / ".config/codex-relay/config.toml"
-    legacy = tomllib.loads(legacy_path.read_text())
-    data = str(Path(legacy.get("data_dir", str(home / ".local/state/codex-relay"))).expanduser())
-    token = private / "notifier-token"
+    legacy = tomllib.loads(legacy_path.read_text()) if legacy_path.exists() else {}
+    if not legacy and (notifier_config / "bot.toml").exists():
+        legacy = tomllib.loads((notifier_config / "bot.toml").read_text())
+    if "allowed_user_id" not in legacy:
+        raise ValueError("Provision the intended private Telegram account settings first")
+    data = str(data_path)
+    token = notifier_config / "notifier-token"
     if not token.exists():
         source = Path(legacy.get("token_file", str(home / ".config/codex-relay/bot-token"))).expanduser()
         shutil.copyfile(source, token)
@@ -74,10 +104,10 @@ def main():
         ),
     )
     write_new(
-        private / "bot.toml",
+        notifier_config / "bot.toml",
         toml_text(
             {
-                "data_dir": str(home / ".local/state/remote-vibecoding-notifier"),
+                "data_dir": str(notifier_state),
                 "runtime_dir": data + "/run",
                 "token_file": str(token),
                 "web_url": "https://vibecoding.com",
@@ -87,7 +117,6 @@ def main():
             }
         ),
     )
-    notifier_state = home / ".local/state/remote-vibecoding-notifier"
     notifier_state.mkdir(parents=True, exist_ok=True, mode=0o700)
     revisions = {
         "CORE_REVISION": run(
@@ -135,14 +164,15 @@ def main():
         )
     public = key.with_suffix(".pub").read_text().strip()
     revision = revisions["CORE_REVISION"]
-    destination = home / ".local/share/remote-vibecoding/executor" / revision / "host_executor.py"
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination = room / "runtime/core/host_executor.py"
+    run(["sudo", "-n", "install", "-d", "-m", "755", str(destination.parent)])
     content = run(
         ["git", "show", revision + ":scripts/host_executor.py"],
         cwd=root / "vibecoding-core",
         capture_output=True,
     ).stdout
-    write_new(destination, content, mode=0o700)
+    run(["sudo", "-n", "tee", str(destination)], input=content, stdout=subprocess.DEVNULL)
+    run(["sudo", "-n", "chmod", "644", str(destination)])
     host_key = Path("/etc/ssh/ssh_host_ed25519_key.pub").read_text().split()
     write_new(private / "known_hosts", "vibecoding-host " + " ".join(host_key[:2]) + "\n")
     user = pwd.getpwuid(os.getuid()).pw_name

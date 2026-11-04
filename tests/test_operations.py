@@ -13,7 +13,7 @@ def operations(tmp_path, monkeypatch):
     home = tmp_path / "home"
     state = tmp_path / "state"
     (tmp_path / ".env").write_text(
-        f"APP_HOME={home}\nAPP_STATE_DIR={state}\nCORE_REVISION=core-old\nBOT_REVISION=bot-old\n"
+        f"APP_HOME={home}\nAPP_STATE_DIR={state}\nREMOTE_VIBECODING_ROOT={tmp_path}\nCORE_REVISION=core-old\nBOT_REVISION=bot-old\n"
     )
     operations = ops.Operations(tmp_path)
     monkeypatch.setattr(operations, "cleanup_images", lambda component: None)
@@ -73,11 +73,13 @@ def test_core_update_waits_for_active_work_then_releases_drain(operations, monke
     assert calls[-1] == ("/drain", {"enabled": False})
 
 
-def test_scheduled_worker_uses_one_stable_source_path(operations, monkeypatch):
+def test_scheduled_worker_uses_installed_operator_path(operations, monkeypatch):
     calls = []
     monkeypatch.setattr(ops, "run", lambda argv, **kwargs: calls.append(argv))
+    worker = Path("/srv/remote-vibecoding/runtime/core/ops.py")
+    monkeypatch.setattr(ops, "__file__", str(worker))
     operations.schedule_core("a" * 40)
-    assert str(operations.root / "vibecoding-core/scripts/ops.py") in calls[0]
+    assert str(worker) in calls[0]
     assert not (operations.private.parent.parent / "share/remote-vibecoding/ops").exists()
 
 

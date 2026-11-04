@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Install the host operator/executor and Compose payload in the service room; keep explicit source builds independent of lifecycle and snapshots.
+
 ## [0.1.12] - 2026-10-31
 
 - Keep patched uv 0.13.4 in the dependency build stage only; remove unused
