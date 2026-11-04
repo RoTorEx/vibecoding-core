@@ -27,7 +27,7 @@ data/notifier; runtime_dir points to Core's data/core/run directory. Keep existi
 running the old interactive bot. Separate bot.toml/core.toml define settings. compose.env holds
 host paths, UID/GID and selected image revisions; the workspace .env links to it.
 Installed operations read config/core/compose.env directly. Only explicit source
-builds consult REMOTE_VIBECODING_ROOT; lifecycle/status/snapshots use installed files.
+builds consult REMOTE_VIBECODING_ROOT; lifecycle/status use installed files.
 Credential values must not enter Git, images, logs or shell command arguments.
 
 The dedicated executor SSH key is scoped by forced command and the actual
@@ -62,38 +62,24 @@ verification.
 A rollback stops the two containers before reactivating legacy writers; never
 start both implementations over the same SQLite state.
 
-## Backups
+## Recovery
 
-The Core CLI creates consistent private snapshots with online SQLite backups,
-native history/auth, private application config and registered project sources.
-The registered workspace includes its root Git tree, both child repositories and
-uncommitted files. Legacy non-Git roots still use workspace.toml to select the
-children. Root snapshots omit the absolute .env link; private Compose configuration
-is captured under config/. Recreate that link through scripts/provision_host.py
-after restoring the private configuration.
-Home is never recursively included as a generic workspace. Rebuildable native
-and build caches, logs and runtime helper links are excluded.
+Preserve runtime controls and private launch configuration, executor credentials
+and notifier/Web access settings. The owner treats session history, uploads,
+native Codex state and uncommitted working copies as disposable; these are not
+selected for scheduled off-site backup. Recovery starts a new session in the
+intended project directory. Existing live history is not deleted during cleanup.
 
-After migration, run scripts/install_operations.py --root <workspace> as alex
-to install the remote-vibecoding CLI and snapshot timer. Disable the legacy
-snapshot timer only after its replacement is ready. The CLI, snapshot timer and
-scheduled updates use /srv/remote-vibecoding/runtime/core/ops.py,
-without per-revision worker directories. Installation removes known legacy worker
-copies once no in-flight update needs them. The old snapshot selection
-archive identity remains codex-relay; update the offsite registry to the new
-data/core/snapshots path during the room migration.
+Run scripts/install_operations.py --root <workspace> as alex to install the host
+CLI. It installs no snapshot timer. Lifecycle and scheduled updates execute
+/srv/remote-vibecoding/runtime/core/ops.py. The existing manual Core CLI backup
+command remains an explicit administrative action, never a background dependency.
 
 Successful activation prunes obsolete component images through the existing
 host-maintenance helper. These repositories are excluded from its automatic
 timer because a built Core candidate can wait for idle; only post-activation
 scoped cleanup removes their old images. Git owns history, and rollback rebuilds
 the requested revision without another persistent checkout.
-
-The hourly host snapshot job calls the Core container; it does not add a third
-application container. A held snapshot lock defers the duplicate attempt
-successfully and preserves the last complete archive. Existing backup-service registration/retention continues
-to select the same snapshot files. The owner declined Google OAuth changes.
-Archives contain sensitive bot/native/executor credentials and must stay private.
 
 Recovery verifies checksum, safe extraction, SQLite integrity, native rollouts,
 both repositories and config in an independent staging directory. Reconcile host

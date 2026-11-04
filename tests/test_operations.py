@@ -83,18 +83,6 @@ def test_scheduled_worker_uses_installed_operator_path(operations, monkeypatch):
     assert not (operations.private.parent.parent / "share/remote-vibecoding/ops").exists()
 
 
-def test_duplicate_snapshot_defers_and_preserves_previous_copy(operations, capsys):
-    operations.api = lambda path: {"accepting": True, "busy": False, "pending_requests": 0}
-    output = operations.state / "snapshots"
-    output.mkdir(parents=True)
-    (output / "latest.tar.gz").write_bytes(b"previous verified copy")
-    with (output / "snapshot.lock").open("a") as lock:
-        ops.fcntl.flock(lock, ops.fcntl.LOCK_EX | ops.fcntl.LOCK_NB)
-        operations.snapshot()
-    assert (output / "latest.tar.gz").read_bytes() == b"previous verified copy"
-    assert "Snapshot deferred" in capsys.readouterr().out
-
-
 def test_rollback_rebuild_streams_only_the_requested_git_source(operations, monkeypatch):
     import io
     import subprocess

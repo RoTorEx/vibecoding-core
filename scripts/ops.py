@@ -4,7 +4,6 @@
 import argparse
 import contextlib
 import fcntl
-import hashlib
 import http.client
 import json
 import os
@@ -354,48 +353,6 @@ class Operations:
             with contextlib.suppress(Exception):
                 self.api("/drain", {"enabled": False})
 
-    def snapshot(self):
-        health = self.api("/health")
-        if not health["accepting"] or health["busy"] or health["pending_requests"]:
-            print("Snapshot deferred while Core is busy; previous copy retained")
-            return
-        output = self.state / "snapshots"
-        output.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with (output / "snapshot.lock").open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                print("Snapshot deferred while another snapshot is running; previous copy retained")
-                return
-            target = output / "next.tar.gz"
-            checksum = output / "next.tar.gz.sha256"
-            target.unlink(missing_ok=True)
-            checksum.unlink(missing_ok=True)
-            try:
-                self.compose(
-                    [
-                        "exec",
-                        "-T",
-                        "core",
-                        "vibecoding-core",
-                        "backup",
-                        str(target),
-                        "--include-codex",
-                        "--project-sources",
-                        "--wait",
-                        "0",
-                    ]
-                )
-                with target.open("rb") as stream:
-                    digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                atomic_text(checksum, digest + "  latest.tar.gz\n")
-                target.replace(output / "latest.tar.gz")
-                checksum.replace(output / "latest.tar.gz.sha256")
-                print("Private consistent snapshot published")
-            finally:
-                target.unlink(missing_ok=True)
-                checksum.unlink(missing_ok=True)
-
 
 def main():
     os.umask(0o077)
@@ -414,7 +371,6 @@ def main():
             "deploy-core",
             "apply-core",
             "rollback-bot",
-            "snapshot",
             "core-cli",
         ],
     )
@@ -431,8 +387,6 @@ def main():
         operations.compose(["stop"])
     elif args.action == "core-cli":
         operations.compose(["exec", "-T", "core", "vibecoding-core", *args.arguments])
-    elif args.action == "snapshot":
-        operations.snapshot()
     else:
         operations.private.mkdir(parents=True, exist_ok=True, mode=0o700)
         with (operations.private / "deployment.lock").open("a") as lock:

@@ -47,13 +47,13 @@ Stable request IDs deduplicate accepted input. Unknown RPC outcomes are never
 blindly replayed. Bot restart must preserve active native execution. Core restart
 can interrupt work and must preserve thread identity, history and source files.
 
-Backups use online SQLite snapshots, preserve private configuration, native
-history/auth and registered Git source changes, and exclude rebuildable caches.
-An explicitly registered Remote Vibecoding workspace includes its root router
-Git repository and both independent component repositories. The root owns routing
-and has no product release version. Core retains shared Compose/Make ownership. Home is never recursively backed up as a generic project.
-Existing offsite backup credentials/retention remain unchanged; the owner
-explicitly declined Google OAuth credential changes after the earlier exposure.
+The owner treats vibecoding sessions, conversations, uploads and uncommitted
+working copies as disposable. Scheduled/off-site recovery preserves launch
+configuration and credentials only; it does not preserve native history or
+prepare hourly snapshots. A new session in the intended project directory is a
+sufficient recovery workflow. Existing live history is retained during backup
+cleanup. The explicit manual CLI backup remains available when deliberately
+invoked; it is not installed as a scheduled maintenance task.
 
 ## Boundaries and verification
 
@@ -218,9 +218,9 @@ MCP elicitation keep their existing RPC response contracts.
 
 The host operator, executor and Compose payload live in `/srv/remote-vibecoding/runtime/core`.
 Private Core configuration and deployment metadata live in `config/core`; the notifier
-owns `config/notifier` and `data/notifier`. Core owns `data/core`, including snapshots
+owns `config/notifier` and `data/notifier`. Core owns `data/core`, including live history
 and uploads. Paths are relative to `/srv/remote-vibecoding`. Native `.codex` identities,
 credentials and developer source cwd paths remain under the existing alex home.
 The installed operator uses `REMOTE_VIBECODING_ROOT` only for explicit source builds;
-status, lifecycle, scheduled updates and snapshots execute installed runtime payload.
+status, lifecycle and scheduled updates execute installed runtime payload.
 Existing state requires a stopped-producer migration, never empty replacement state.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Retire automatic history snapshots and their installer/operator command; recovery preserves launch configuration while live session data remains disposable.
+
 - Allow the native Web activation probe to use its isolated host-reachable bridge URL without changing the Core application image.
 
 ## [0.1.13] - 2026-11-04
