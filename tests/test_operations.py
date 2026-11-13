@@ -21,33 +21,13 @@ def operations(tmp_path, monkeypatch):
     return operations
 
 
-def test_bot_update_recreates_only_bot_and_keeps_core_identity(operations):
-    calls = []
-    operations.compose = lambda args, revisions=None, **kwargs: calls.append((args, revisions))
-    operations.container_id = lambda component: "unchanged-core"
-    operations.wait_ready = lambda component, revision: None
-    operations.activate("bot", "bot-new")
-    assert calls == [
-        (["up", "--detach", "--no-deps", "--force-recreate", "bot"], {"BOT_REVISION": "bot-new"})
-    ]
-    assert operations.image_revision("core") == "core-old"
-    assert operations.image_revision("bot") == "bot-new"
-
-
-def test_failed_bot_update_restores_previous_image_without_switching_core(operations):
-    calls = []
-    operations.compose = lambda args, revisions=None, **kwargs: calls.append((args, revisions))
-    operations.container_id = lambda component: "unchanged-core"
-
-    def ready(component, revision):
-        if revision == "bot-new":
-            raise RuntimeError("new image is not ready")
-
-    operations.wait_ready = ready
-    with pytest.raises(RuntimeError, match="not ready"):
+def test_bot_activation_belongs_to_independent_notifier(operations):
+    operations.compose = lambda *args, **kwargs: pytest.fail("must not touch shared containers")
+    with pytest.raises(ValueError, match="independently deployed"):
         operations.activate("bot", "bot-new")
-    assert [r["BOT_REVISION"] for _, r in calls] == ["bot-new", "bot-old"]
-    assert all(args[-1] == "bot" and "--no-deps" in args for args, _ in calls)
+    with pytest.raises(ValueError, match="independently deployed"):
+        operations.build("bot")
+    assert operations.image_revision("core") == "core-old"
     assert operations.image_revision("bot") == "bot-old"
 
 
@@ -130,33 +110,15 @@ def test_rollback_rebuild_streams_only_the_requested_git_source(operations, monk
     assert "remote-vibecoding-bot:" + revision in builds[0][0]
 
 
-def test_failed_cutover_never_reactivates_interactive_bot(operations):
+def test_workspace_startup_owns_only_core(operations):
     calls = []
-    operations.notifier_image = lambda revision: revision == "bot-new"
-    operations.compose = lambda args, revisions=None, **kwargs: calls.append((args, revisions))
-    operations.container_id = lambda component: "unchanged-core"
-    operations.wait_ready = lambda *args: (_ for _ in ()).throw(RuntimeError("not ready"))
-    with pytest.raises(RuntimeError, match="not ready"):
-        operations.activate("bot", "bot-new")
-    assert calls == [
-        (["up", "--detach", "--no-deps", "--force-recreate", "bot"], {"BOT_REVISION": "bot-new"}),
-        (["stop", "bot"], None),
-    ]
-    assert operations.image_revision("core") == "core-old"
-
-
-def test_interactive_bot_candidate_is_rejected_before_activation(operations):
-    operations.notifier_image = lambda revision: False
-    operations.compose = lambda *args, **kwargs: pytest.fail("must not activate")
-    with pytest.raises(ValueError, match="notification-only"):
-        operations.activate("bot", "interactive-old")
-
-
-def test_workspace_startup_cannot_restore_interactive_intake(operations):
-    operations.notifier_image = lambda revision: False
-    operations.compose = lambda *args, **kwargs: pytest.fail("must not start either container")
-    with pytest.raises(ValueError, match="interactive Telegram"):
-        operations.up()
+    operations.compose = lambda args, revisions=None, **kwargs: calls.append(args)
+    operations.wait_ready = lambda component, revision: calls.append((component, revision))
+    operations.notifier_image = lambda revision: pytest.fail("must not inspect or start old notifier")
+    operations.up()
+    assert calls == [["up", "--detach"], ("core", "core-old")]
+    manifest = (Path(__file__).parents[1] / "deployment/workspace/compose.yaml").read_text()
+    assert "  bot:" not in manifest
 
 
 @pytest.mark.parametrize("fail_candidate", [False, True, "metadata"])

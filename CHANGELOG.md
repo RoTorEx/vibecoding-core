@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Separate Personal Notifier into its own repository and Compose project. Core
+  remains the read-only event source; workspace startup no longer starts the
+  retired Telegram container. Native sessions and API permissions are unchanged.
+
 - Retire automatic history snapshots and their installer/operator command; recovery preserves launch configuration while live session data remains disposable.
 
 - Allow the native Web activation probe to use its isolated host-reachable bridge URL without changing the Core application image.

@@ -131,6 +131,8 @@ class Operations:
         raise RuntimeError(f"{component} did not become ready at the requested revision")
 
     def build(self, component):
+        if component == "bot":
+            raise ValueError("Personal Notifier is independently deployed from its own repository")
         repo = self.source / ("vibecoding-core" if component == "core" else "telegram-vibecoding")
         if run(["git", "status", "--porcelain"], cwd=repo, capture_output=True).stdout.strip():
             raise ValueError(f"Commit {component} source before deployment; working changes are preserved")
@@ -196,13 +198,12 @@ class Operations:
         return result.returncode == 0 and result.stdout.strip() == "notifications-only"
 
     def up(self):
-        if not self.notifier_image(self.image_revision("bot")):
-            raise ValueError("Refusing workspace startup with an interactive Telegram image")
         self.compose(["up", "--detach"])
-        for component in ["core", "bot"]:
-            self.wait_ready(component, self.image_revision(component))
+        self.wait_ready("core", self.image_revision("core"))
 
     def activate(self, component, revision):
+        if component == "bot":
+            raise ValueError("Personal Notifier is independently deployed from its own repository")
         if component == "bot" and not self.notifier_image(revision):
             raise ValueError("Refusing a Telegram image without the notification-only contract")
         key = component.upper() + "_REVISION"

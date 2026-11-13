@@ -4,15 +4,15 @@
 
 The host service of Remote Vibecoding owns agent sessions, native execution,
 history, project/location registration and a versioned Unix-socket JSON API.
-Telegram interaction is owned by the sibling telegram-vibecoding repository.
+Personal notifications are owned by the independent personal-notifier repository.
 
-The accepted deployment is one Compose project with exactly two containers.
+The Core Compose project owns the Core container; Personal Notifier has its own Compose project.
 Core launches native Codex on the execution host through the existing SSH
 daemon, as alex with the owner's existing sudo rights. The SSH executor is a
 short-lived entrypoint, not another permanent service. Each future execution
 host owns its state; live cross-host session migration is deferred.
 
-Telegram is now a notification-only consumer. Its container has its own state
+Personal Notifier is a pull-only, outbound-only consumer. Its container has its own state
 directory, a read-only bind of the API socket directory and private notifier
 configuration/token; it does not mount engine.db, captured uploads, host home
 or a confirmation port. A read-only bind does not make a Unix socket protocol

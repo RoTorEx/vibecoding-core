@@ -1,3 +1,15 @@
+# Personal Notifier separation
+
+Personal Notifier now lives at `personal/projects/home/personal-notifier` and
+`https://github.com/RoTorEx/personal-notifier`. Its independent Compose project
+owns `/srv/personal-notifier/{runtime,config,data}`. Core remains the read-only
+notification source through its existing Unix API; its container and active native
+sessions must not be restarted for a notifier update. The old `deploy-bot` command
+fails with the new owner instead of activating a second delivery process.
+
+The following older shared-room procedure is retained as migration/rollback
+history. It must not be used to reactivate the retired shared bot container.
+
 # Remote Vibecoding operations
 
 ## Workspace
