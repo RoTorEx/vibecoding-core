@@ -2,10 +2,8 @@
 OPS = remote-vibecoding
 install:
 	$(MAKE) -C vibecoding-core install
-	$(MAKE) -C telegram-vibecoding install
 check:
 	$(MAKE) -C vibecoding-core check
-	$(MAKE) -C telegram-vibecoding check
 build:
 	$(OPS) build
 up:

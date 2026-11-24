@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use Core-owned workspace paths directly for source Compose operations and workspace backup discovery.
+
 - Separate Personal Notifier into its own repository and Compose project. Core
   remains the read-only event source; workspace startup no longer starts the
   retired Telegram container. Native sessions and API permissions are unchanged.

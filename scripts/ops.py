@@ -57,6 +57,11 @@ class Operations:
 
     def compose(self, args, revisions=None, **kwargs):
         environment = {**os.environ, **read_env(self.env_file), **(revisions or {})}
+        manifest = self.root / (
+            "runtime/core/compose.yaml"
+            if self.installed
+            else "vibecoding-core/deployment/workspace/compose.yaml"
+        )
         argv = [
             "sudo",
             "-n",
@@ -68,7 +73,7 @@ class Operations:
             "--env-file",
             str(self.env_file),
             "--file",
-            str(self.root / "runtime/core/compose.yaml" if self.installed else self.root / "compose.yaml"),
+            str(manifest),
             "--project-name",
             "remote-vibecoding",
             *args,

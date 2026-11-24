@@ -21,6 +21,19 @@ def operations(tmp_path, monkeypatch):
     return operations
 
 
+def test_source_compose_uses_the_core_manifest(operations, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ops, "run", lambda argv, **kwargs: calls.append(argv))
+
+    operations.compose(["config", "--quiet"])
+
+    argv = calls[0]
+    assert Path(argv[argv.index("--file") + 1]) == (
+        operations.root / "vibecoding-core/deployment/workspace/compose.yaml"
+    )
+    assert Path(argv[argv.index("--project-directory") + 1]) == operations.root
+
+
 def test_bot_activation_belongs_to_independent_notifier(operations):
     operations.compose = lambda *args, **kwargs: pytest.fail("must not touch shared containers")
     with pytest.raises(ValueError, match="independently deployed"):

@@ -95,7 +95,8 @@ replace live databases with old copies. Point-in-time data restore is a separate
 explicit recovery decision.
 
 For staged reconstruction, restore the two repositories under the manifest
-location ID and run the restored Core's scripts/link_workspace.py on their parent.
+location ID. Recovery of the original 2026-10-23 revision used the restored Core's
+`scripts/link_workspace.py`; current workspaces read files directly from Core.
 It recreates common entrypoints from versioned files. Reconcile private paths,
 host identity, UID/GID, executor authorization and known_hosts before activation
 on a different host.

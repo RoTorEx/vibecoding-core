@@ -181,6 +181,8 @@ async def snapshot(settings: Settings, client: EngineClient, args) -> dict:
                         continue
                     sources = [(source, "projects/" + project["id"])]
                     marker = source / "workspace.toml"
+                    if not marker.is_file():
+                        marker = source / "vibecoding-core/deployment/workspace/workspace.toml"
                     if not (source / ".git").exists():
                         if not marker.exists():
                             continue

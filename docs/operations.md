@@ -1,27 +1,22 @@
-# Personal Notifier separation
+# Notification ownership and legacy Personal Notifier separation
 
-Personal Notifier now lives at `personal/projects/home/personal-notifier` and
-`https://github.com/RoTorEx/personal-notifier`. Its independent Compose project
-owns `/srv/personal-notifier/{runtime,config,data}`. Core remains the read-only
-notification source through its existing Unix API; its container and active native
-sessions must not be restarted for a notifier update. The old `deploy-bot` command
-fails with the new owner instead of activating a second delivery process.
+Node Tools collects current Vibecoding technical outcomes through Core's read-only
+Unix API, and Node Radar delivers them. Personal Notifier's production Core
+collection and pending legacy delivery are disabled; its old cursor, work counters
+and genuine receipts remain handover/recovery evidence. Do not route new Core
+notification work through Personal Notifier.
 
-The following older shared-room procedure is retained as migration/rollback
-history. It must not be used to reactivate the retired shared bot container.
+The following Personal Notifier separation and shared-room procedures are retained
+as migration/rollback history. They must not reactivate a Core-connected Personal
+Notifier or the retired shared bot container.
 
 # Remote Vibecoding operations
 
 ## Workspace
 
-Use personal/projects/vibecoding/remote-vibecoding with sibling telegram-vibecoding and
-vibecoding-core Git checkouts. Run scripts/link_workspace.py from Core to create
-the common entrypoint links. Source changes/commits belong to their component.
+Use personal/projects/vibecoding/remote-vibecoding as the workspace root, with Core and Web child checkouts. Notification collection and delivery belong to the sibling Node Tools and Node Radar checkouts. The root Makefile includes `vibecoding-core/deployment/workspace/Makefile`. Use the Core paths directly for the Compose manifest, workspace manifest, environment example, docs and task queue.
 
-Python 3.13+ and uv support development. make check at the workspace root runs
-both repositories; frontend integration tests use the sibling Core checkout
-without making it a production package dependency. Frozen Docker builds install
-only their component's runtime dependencies.
+Python 3.13+ and uv support development. make check at the workspace root runs Core checks; Web, Node Tools and Node Radar have their own checks. Frontend integration tests use the sibling Core checkout without making it a production package dependency. Frozen Docker builds install only their component's runtime dependencies.
 
 ## Host prerequisites and private configuration
 

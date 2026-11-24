@@ -126,7 +126,11 @@ async def test_workspace_snapshot_includes_both_independent_git_sources(host, tm
     settings, engine, native, client = host
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    (workspace / "workspace.toml").write_text('repositories = ["telegram-vibecoding", "vibecoding-core"]\n')
+    marker = workspace / "workspace.toml"
+    if root_git:
+        marker = workspace / "vibecoding-core/deployment/workspace/workspace.toml"
+        marker.parent.mkdir(parents=True)
+    marker.write_text('repositories = ["telegram-vibecoding", "vibecoding-core"]\n')
     if root_git:
         (workspace / ".git").mkdir()
         (workspace / "AGENTS.md").write_text("Workspace router")
