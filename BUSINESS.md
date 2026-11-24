@@ -4,23 +4,22 @@
 
 The host service of Remote Vibecoding owns agent sessions, native execution,
 history, project/location registration and a versioned Unix-socket JSON API.
-Personal notifications are owned by the independent personal-notifier repository.
+Node Tools owns read-only collection of Vibecoding technical outcomes; Node Radar
+owns their Telegram delivery. Personal Notifier retains only its independent
+non-technical feeds and legacy handover/recovery state.
 
-The Core Compose project owns the Core container; Personal Notifier has its own Compose project.
-Core launches native Codex on the execution host through the existing SSH
-daemon, as alex with the owner's existing sudo rights. The SSH executor is a
-short-lived entrypoint, not another permanent service. Each future execution
-host owns its state; live cross-host session migration is deferred.
+The Core Compose project owns the Core container; consumers retain independent
+projects and state. Core launches native Codex on the execution host through the
+existing SSH daemon, as alex with the owner's existing sudo rights. The SSH
+executor is a short-lived entrypoint, not another permanent service. Each future
+execution host owns its state; live cross-host session migration is deferred.
 
-Personal Notifier is a pull-only, outbound-only consumer. Its container has its own state
-directory, a read-only bind of the API socket directory and private notifier
-configuration/token; it does not mount engine.db, captured uploads, host home
-or a confirmation port. A read-only bind does not make a Unix socket protocol
-read-only: the notifier client separately rejects all mutation endpoints.
-Core's private API and native execution permissions remain unchanged.
-Bot activation, workspace startup and rollback accept only images reporting notifications-only
-capabilities; a failed first cutover stops Telegram rather than reactivating an
-interactive bot. Later notification-only revisions retain normal rollback.
+Node Tools is a pull-only, outbound-only collector with a read-only bind of the
+API socket directory. It does not mount engine.db, captured uploads or host home.
+A read-only bind does not make a Unix socket protocol read-only: the collector
+separately rejects all mutation endpoints. Core's private API and native execution
+permissions remain unchanged. Legacy Personal Notifier activation/rollback
+instructions are recovery history, not a route for current Vibecoding delivery.
 
 ## Native execution contract
 
@@ -40,9 +39,10 @@ namespace is needed for that access.
 
 ## State and recovery
 
-Core owns engine.db and native host threads. The notifier owns bot.db in a
-separate local state directory. Existing legacy shared bot state remains
-preserved for recovery and is not replayed by the notifier.
+Core owns engine.db and native host threads. Node Tools owns the current collector
+cursor/work state, and Node Radar owns delivery receipts. Personal Notifier's old
+bot.db, cursor, counters and genuine receipts remain separate recovery/handover
+state and are not replayed.
 Stable request IDs deduplicate accepted input. Unknown RPC outcomes are never
 blindly replayed. Bot restart must preserve active native execution. Core restart
 can interrupt work and must preserve thread identity, history and source files.
@@ -114,8 +114,9 @@ transcript is durably cached by request identity before any native dispatch.
 Unknown native outcomes retain the existing no-replay rule. Decode/recognition
 failure never invokes the agent. Model memory is released when its process exits.
 
-Raw recordings stay in private uploads and normal state snapshots; rebuildable
-model weights stay in the private host cache and are excluded from snapshots.
+Raw recordings stay in private uploads until interface retention expires them;
+scheduled/off-site recovery excludes them. Rebuildable model weights stay in the
+private host cache and are excluded from snapshots.
 Use scripts/install_speech_model.py to install the pinned model. Runtime model
 loading is offline. Transcription events record recording duration, elapsed time,
 CPU seconds and process peak RSS for load assessment. Tests cover captured input,
@@ -167,8 +168,9 @@ each image to its session and optional original user-event anchor; deduplicate
 content retries and preserve bytes after the source file changes or disappears.
 Only user events from that session can be anchors. The attachment event/history
 reference lets the frontend deliver and browse downloads after restart. Native
-work and original source files are not modified. Backups retain these files via
-the existing private uploads and online database snapshot paths.
+work and original source files are not modified. Only the explicit manual CLI
+backup retains current files through the existing private uploads and online
+database snapshot paths; scheduled/off-site recovery excludes them.
 
 ## Seven-day interface history
 
@@ -178,8 +180,9 @@ Reads and retries never renew this lifetime. Check every 900 seconds (15
 minutes) within Core; POST /maintenance/retention supports an immediate operator
 check. The frontend independently expires its own transport copies and intake
 files through the API contract, without importing Core or writing engine.db.
-Core content lives in its configured data_dir: engine.db and uploads. The
-notification-only Telegram consumer owns a separate state directory.
+Core content lives in its configured data_dir: engine.db and uploads. Node Tools
+owns collector state outside Core; the legacy Telegram consumer's separate state
+remains recovery/handover evidence.
 
 Protect sessions with active native turns, pending input/preprocessing or native
 questions until resolved. Preserve session/thread identity, settings and compact
